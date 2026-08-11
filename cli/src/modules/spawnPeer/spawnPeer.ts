@@ -231,12 +231,11 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
     if (options.agent && !(CREATABLE_AGENT_FLAVORS as readonly string[]).includes(options.agent)) {
         throw new SpawnPeerError('bad_args', `unsupported agent: ${options.agent}`)
     }
-    if (options.permissionMode && options.agent
-        && !isPermissionModeAllowedForFlavor(options.permissionMode, options.agent)
-    ) {
+    const flavor = options.agent ?? 'claude'
+    if (options.permissionMode && !isPermissionModeAllowedForFlavor(options.permissionMode, flavor)) {
         throw new SpawnPeerError(
             'bad_args',
-            `permission mode ${options.permissionMode} is not supported by ${options.agent}`
+            `permission mode ${options.permissionMode} is not supported by ${flavor}`
         )
     }
 
