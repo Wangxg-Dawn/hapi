@@ -14,7 +14,12 @@
 
 import axios, { type AxiosInstance } from 'axios'
 import { isObject, SESSION_NAME_MAX_LENGTH } from '@hapi/protocol'
-import { CREATABLE_AGENT_FLAVORS, type AgentFlavor, type PermissionMode } from '@hapi/protocol/modes'
+import {
+    CREATABLE_AGENT_FLAVORS,
+    isPermissionModeAllowedForFlavor,
+    type AgentFlavor,
+    type PermissionMode
+} from '@hapi/protocol/modes'
 import { configuration } from '@/configuration'
 import { getAuthToken } from '@/api/auth'
 import { buildHubRequestHeaders } from '@/api/hubExtraHeaders'
@@ -225,6 +230,14 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
 
     if (options.agent && !(CREATABLE_AGENT_FLAVORS as readonly string[]).includes(options.agent)) {
         throw new SpawnPeerError('bad_args', `unsupported agent: ${options.agent}`)
+    }
+    if (options.permissionMode && options.agent
+        && !isPermissionModeAllowedForFlavor(options.permissionMode, options.agent)
+    ) {
+        throw new SpawnPeerError(
+            'bad_args',
+            `permission mode ${options.permissionMode} is not supported by ${options.agent}`
+        )
     }
 
     const waitActiveSecs = options.waitActiveSecs ?? DEFAULT_WAIT_ACTIVE_SECS

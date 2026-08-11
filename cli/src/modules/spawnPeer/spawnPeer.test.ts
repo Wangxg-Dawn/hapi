@@ -75,6 +75,27 @@ describe('spawnPeer', () => {
         })).rejects.toMatchObject({ code: 'bad_args' })
     })
 
+    it('rejects a permissionMode the selected agent does not support before spawn', async () => {
+        const http = createHttpMock({
+            post: (url) => {
+                throw new Error(`spawn must not run; unexpected POST ${url}`)
+            }
+        })
+
+        await expect(spawnPeer({
+            directory: '/tmp/project',
+            message: 'do the work',
+            agent: 'codex',
+            permissionMode: 'bypassPermissions',
+            machineId: MACHINE_ID,
+            accessToken: 'tok',
+            apiUrl: 'http://hub.test',
+            http: http as never
+        })).rejects.toMatchObject({ code: 'bad_args' })
+
+        expect(http.post).not.toHaveBeenCalled()
+    })
+
     it('rejects a name longer than the hub rename max before spawn', async () => {
         const http = createHttpMock({
             post: (url) => {
