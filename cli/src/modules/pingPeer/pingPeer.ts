@@ -55,6 +55,13 @@ export type PingPeerOptions = {
     sessionId?: string
     message: string
     waitActiveSecs?: number
+    /**
+     * Fresh spawn: poll until active instead of POST /resume on the first
+     * inactive snapshot. Machine spawn can return before the hub row is
+     * active; resume would launch a second child (no existingSessionId on
+     * the original spawn, so runner dedupe does not coalesce).
+     */
+    waitForInitialActive?: boolean
     apiUrl?: string
     accessToken?: string
     http?: AxiosInstance
@@ -504,7 +511,13 @@ export async function pingPeer(options: PingPeerOptions): Promise<PingPeerResult
     // Prefer the list snapshot for the first resume decision, then re-check before
     // send so a flip to inactive between list and POST cannot 409 (#1195).
     if (!matched.active) {
-        await ensureActive('requesting resume...')
+        if (options.waitForInitialActive) {
+            onProgress?.('waiting for newly spawned session to become active...')
+            await waitUntilActive(apiUrl, jwt, matched.id, waitActiveSecs, http, sleep, now, onProgress)
+            onProgress?.('session active')
+        } else {
+            await ensureActive('requesting resume...')
+        }
     }
 
     let live = await ensureActive('session went inactive before send; requesting resume...')

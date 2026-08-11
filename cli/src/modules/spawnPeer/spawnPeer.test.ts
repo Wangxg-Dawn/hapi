@@ -229,6 +229,67 @@ describe('spawnPeer', () => {
         expect(http.patch).toHaveBeenCalledTimes(1)
     })
 
+    it('waits for a freshly spawned inactive session without posting /resume', async () => {
+        let resumeCalls = 0
+        let sessionGets = 0
+        const http = createHttpMock({
+            post: (url) => {
+                if (url.endsWith('/api/auth')) {
+                    return { status: 200, data: { token: 'jwt' } }
+                }
+                if (url.endsWith(`/api/machines/${MACHINE_ID}/spawn`)) {
+                    return { status: 200, data: { type: 'success', sessionId: SESSION_ID } }
+                }
+                if (url.endsWith(`/api/sessions/${SESSION_ID}/resume`)) {
+                    resumeCalls += 1
+                    throw new Error('spawn-peer must not resume a just-spawned child')
+                }
+                if (url.endsWith(`/api/sessions/${SESSION_ID}/messages`)) {
+                    return { status: 200, data: { ok: true } }
+                }
+                throw new Error(`unexpected POST ${url}`)
+            },
+            get: (url) => {
+                if (url.endsWith(`/api/sessions/${SESSION_ID}`)) {
+                    sessionGets += 1
+                    return {
+                        status: 200,
+                        data: {
+                            session: {
+                                id: SESSION_ID,
+                                active: sessionGets >= 3,
+                                metadata: { name: 'Fresh', flavor: 'claude' }
+                            }
+                        }
+                    }
+                }
+                if (url.includes(`/api/sessions/${SESSION_ID}/messages`)) {
+                    return {
+                        status: 200,
+                        data: { messages: [userMessageRow('brief')] }
+                    }
+                }
+                throw new Error(`unexpected GET ${url}`)
+            }
+        })
+
+        await spawnPeer({
+            directory: '/tmp/project',
+            message: 'brief',
+            machineId: MACHINE_ID,
+            accessToken: 'tok',
+            apiUrl: 'http://hub.test',
+            waitActiveSecs: 10,
+            http: http as never,
+            now: () => nowMs,
+            sleep: async (ms) => {
+                nowMs += ms
+            }
+        })
+
+        expect(resumeCalls).toBe(0)
+    })
+
     it('fails closed when spawn+send succeed but the session still has no user message', async () => {
         const http = createHttpMock({
             post: (url) => {

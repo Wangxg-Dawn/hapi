@@ -323,6 +323,7 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
             sessionId,
             message,
             waitActiveSecs,
+            waitForInitialActive: true,
             apiUrl,
             accessToken,
             http,
