@@ -201,15 +201,20 @@ async function sessionHasRemit(
     if (!needle) {
         return false
     }
-    const response = await http.get(
-        `${apiUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages`,
-        {
-            headers: authHeaders(jwt),
-            params: { limit: 50 },
-            timeout: 20_000,
-            validateStatus: () => true
-        }
-    )
+    let response: { status: number; data?: { messages?: unknown } }
+    try {
+        response = await http.get(
+            `${apiUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages`,
+            {
+                headers: authHeaders(jwt),
+                params: { limit: 50 },
+                timeout: 20_000,
+                validateStatus: () => true
+            }
+        )
+    } catch {
+        return false
+    }
     if (response.status < 200 || response.status >= 300) {
         return false
     }
@@ -374,7 +379,7 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
                 sessionId,
                 name: renamed
                     ? requestedName
-                    : (pingResult?.name ?? requestedName) || sessionId.slice(0, 8)
+                    : pingResult?.name || sessionId.slice(0, 8)
             }
         }
         if (now() >= deadline) {
