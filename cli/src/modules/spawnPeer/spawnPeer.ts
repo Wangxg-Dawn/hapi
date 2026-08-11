@@ -163,9 +163,9 @@ async function archiveFailedSpawn(
     jwt: string,
     sessionId: string,
     http: AxiosInstance
-): Promise<void> {
+): Promise<boolean> {
     try {
-        await http.post(
+        const response = await http.post(
             `${apiUrl}/api/sessions/${encodeURIComponent(sessionId)}/archive`,
             {},
             {
@@ -174,22 +174,16 @@ async function archiveFailedSpawn(
                 validateStatus: () => true
             }
         )
+        return response.status >= 200 && response.status < 300 && response.data?.ok === true
     } catch {
-        // Best-effort: keep the original spawn/delivery error.
+        return false
     }
 }
 
-function wrapPingPeerError(error: unknown): never {
-    if (error instanceof SpawnPeerError) {
-        throw error
-    }
-    if (error instanceof PingPeerError) {
-        throw new SpawnPeerError(error.code, error.message)
-    }
-    throw new SpawnPeerError(
-        'send_failed',
-        error instanceof Error ? error.message : String(error)
-    )
+function failedChildCleanupNote(sessionId: string, archived: boolean): string {
+    return archived
+        ? `archived the failed child. Retry spawn-peer; do not ping the archived id.`
+        : `archive failed so the child may still be running. Stop or archive ${sessionId} before retrying spawn-peer.`
 }
 
 function collapsedRemitNeedle(message: string): string {
@@ -354,7 +348,8 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
     }
 
     onProgress?.(`delivering remit (${message.length} chars) via ping-peer path...`)
-    let pingResult: { sessionId: string; name: string }
+    let pingResult: { sessionId: string; name: string } | undefined
+    let deliveryError: unknown
     try {
         pingResult = await pingPeer({
             sessionId,
@@ -369,8 +364,7 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
             onProgress
         })
     } catch (error) {
-        await archiveFailedSpawn(apiUrl, jwt, sessionId, http)
-        wrapPingPeerError(error)
+        deliveryError = error
     }
 
     const deadline = now() + waitActiveSecs * 1000
@@ -378,7 +372,9 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
         if (await sessionHasRemit(apiUrl, jwt, sessionId, message, http)) {
             return {
                 sessionId,
-                name: renamed ? requestedName : pingResult.name
+                name: renamed
+                    ? requestedName
+                    : (pingResult?.name ?? requestedName) || sessionId.slice(0, 8)
             }
         }
         if (now() >= deadline) {
@@ -387,11 +383,23 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
         await sleep(POLL_VERIFY_MS)
     }
 
-    await archiveFailedSpawn(apiUrl, jwt, sessionId, http)
+    const archived = await archiveFailedSpawn(apiUrl, jwt, sessionId, http)
+    const cleanupNote = failedChildCleanupNote(sessionId, archived)
+    if (deliveryError) {
+        if (deliveryError instanceof SpawnPeerError) {
+            throw new SpawnPeerError(deliveryError.code, `${deliveryError.message}; ${cleanupNote}`)
+        }
+        if (deliveryError instanceof PingPeerError) {
+            throw new SpawnPeerError(deliveryError.code, `${deliveryError.message}; ${cleanupNote}`)
+        }
+        throw new SpawnPeerError(
+            'send_failed',
+            `${deliveryError instanceof Error ? deliveryError.message : String(deliveryError)}; ${cleanupNote}`
+        )
+    }
     throw new SpawnPeerError(
         'empty_session',
-        `session ${sessionId} still has no user message after remit delivery (empty shell); ` +
-            `archived the failed child. Retry spawn-peer; do not ping the archived id.`
+        `session ${sessionId} still has no user message after remit delivery (empty shell); ${cleanupNote}`
     )
 }
 
