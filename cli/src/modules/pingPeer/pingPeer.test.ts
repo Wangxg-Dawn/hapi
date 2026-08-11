@@ -337,6 +337,53 @@ describe('pingPeer', () => {
         })
     })
 
+    it('delivers to a known sessionId without listing sessions', async () => {
+        const sessionId = 'dddddddd-1111-1111-1111-111111111111'
+        const http = createHttpMock({
+            post: (url, body) => {
+                if (url.endsWith('/api/auth')) {
+                    return { status: 200, data: { token: 'jwt' } }
+                }
+                if (url.endsWith(`/api/sessions/${sessionId}/messages`)) {
+                    expect(body).toEqual({ text: 'remit' })
+                    return { status: 200, data: { ok: true } }
+                }
+                throw new Error(`unexpected POST ${url}`)
+            },
+            get: (url) => {
+                if (url.endsWith('/api/sessions') && !url.includes(sessionId)) {
+                    throw new Error('list must not be called when sessionId is known')
+                }
+                if (url.endsWith(`/api/sessions/${sessionId}`)) {
+                    return {
+                        status: 200,
+                        data: {
+                            session: {
+                                id: sessionId,
+                                active: true,
+                                metadata: { name: 'Spawned', flavor: 'cursor' }
+                            }
+                        }
+                    }
+                }
+                throw new Error(`unexpected GET ${url}`)
+            }
+        })
+
+        const result = await pingPeer({
+            sessionId,
+            message: 'remit',
+            accessToken: 'tok',
+            apiUrl: 'http://hub.test',
+            http: http as never
+        })
+        expect(result).toEqual({
+            sessionId,
+            name: 'Spawned',
+            resumed: false
+        })
+    })
+
     it('maps resume failures to resume_failed', async () => {
         const sessionId = 'deadbeef-1111-1111-1111-111111111111'
         const http = createHttpMock({

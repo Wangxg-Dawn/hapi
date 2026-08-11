@@ -1,0 +1,368 @@
+/**
+ * Spawn a new HAPI session with a required first user message (remit).
+ *
+ * Machine spawn (`POST /api/machines/:id/spawn`) creates an idle composer.
+ * Extra JSON keys such as `message` are stripped. This module is the
+ * fail-closed path: spawn → optional rename → ping-peer delivery →
+ * verify at least one user message. HTTP 200 + sessionId with 0 messages
+ * is a failed spawn (tiann/hapi#1509).
+ *
+ * Shared by `hapi spawn-peer` and MCP `spawn_peer`. Same hub JWT /
+ * namespace as ping-peer. Callers must not invent parallel auth.
+ */
+
+import axios, { type AxiosInstance } from 'axios'
+import { isObject } from '@hapi/protocol'
+import { CREATABLE_AGENT_FLAVORS, type AgentFlavor, type PermissionMode } from '@hapi/protocol/modes'
+import { configuration } from '@/configuration'
+import { getAuthToken } from '@/api/auth'
+import { buildHubRequestHeaders } from '@/api/hubExtraHeaders'
+import { readSettings } from '@/persistence'
+import {
+    PingPeerError,
+    extractInspectMessageSnippet,
+    pingPeer
+} from '@/modules/pingPeer/pingPeer'
+
+export type SpawnPeerErrorCode =
+    | 'bad_args'
+    | 'auth_failed'
+    | 'spawn_failed'
+    | 'empty_session'
+    | 'not_found'
+    | 'ambiguous'
+    | 'resume_failed'
+    | 'timeout'
+    | 'send_failed'
+
+export class SpawnPeerError extends Error {
+    readonly code: SpawnPeerErrorCode
+
+    constructor(code: SpawnPeerErrorCode, message: string) {
+        super(message)
+        this.name = 'SpawnPeerError'
+        this.code = code
+    }
+}
+
+export type SpawnPeerOptions = {
+    directory: string
+    message: string
+    name?: string
+    agent?: AgentFlavor
+    sessionType?: 'simple' | 'worktree'
+    worktreeName?: string
+    permissionMode?: PermissionMode
+    machineId?: string
+    waitActiveSecs?: number
+    apiUrl?: string
+    accessToken?: string
+    http?: AxiosInstance
+    sleep?: (ms: number) => Promise<void>
+    now?: () => number
+    onProgress?: (message: string) => void
+}
+
+export type SpawnPeerResult = {
+    sessionId: string
+    name: string
+}
+
+const DEFAULT_WAIT_ACTIVE_SECS = 60
+const POLL_VERIFY_MS = 1_000
+
+const AUTH_RECOVERY_HINT =
+    'On a remote runner, set HAPI_API_URL to the runner hub, and set CLI_API_TOKEN ' +
+    'or run `hapi auth login` to save the token. Inside a HAPI session prefer MCP ' +
+    '`spawn_peer`, which uses the session CLI credentials.'
+
+function defaultSleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function resolveApiUrl(apiUrl?: string): string {
+    const raw = (apiUrl ?? configuration.apiUrl).trim().replace(/\/+$/, '')
+    if (!raw) {
+        throw new SpawnPeerError(
+            'bad_args',
+            `HAPI API URL is empty. ${AUTH_RECOVERY_HINT}`
+        )
+    }
+    return raw
+}
+
+function resolveAccessToken(accessToken?: string): string {
+    let token = ''
+    try {
+        token = (accessToken ?? getAuthToken()).trim()
+    } catch {
+        token = (accessToken ?? '').trim()
+    }
+    if (!token) {
+        throw new SpawnPeerError(
+            'bad_args',
+            `CLI_API_TOKEN is required (run \`hapi auth login\`). ${AUTH_RECOVERY_HINT}`
+        )
+    }
+    return token
+}
+
+function authHeaders(jwt: string): Record<string, string> {
+    return buildHubRequestHeaders({
+        Authorization: `Bearer ${jwt}`,
+        'Content-Type': 'application/json'
+    })
+}
+
+async function exchangeJwt(
+    apiUrl: string,
+    accessToken: string,
+    http: AxiosInstance
+): Promise<string> {
+    try {
+        const response = await http.post(
+            `${apiUrl}/api/auth`,
+            { accessToken },
+            {
+                headers: buildHubRequestHeaders({ 'Content-Type': 'application/json' }),
+                timeout: 10_000,
+                validateStatus: () => true
+            }
+        )
+        const token = typeof response.data?.token === 'string' ? response.data.token : ''
+        if (response.status < 200 || response.status >= 300 || !token) {
+            const detail = typeof response.data?.error === 'string'
+                ? response.data.error
+                : `HTTP ${response.status}`
+            throw new SpawnPeerError(
+                'auth_failed',
+                `failed to exchange access token for JWT (${detail}). Hub URL: ${apiUrl}. ${AUTH_RECOVERY_HINT}`
+            )
+        }
+        return token
+    } catch (error) {
+        if (error instanceof SpawnPeerError) {
+            throw error
+        }
+        throw new SpawnPeerError(
+            'auth_failed',
+            `failed to exchange access token for JWT (${error instanceof Error ? error.message : String(error)}). Hub URL: ${apiUrl}. ${AUTH_RECOVERY_HINT}`
+        )
+    }
+}
+
+function wrapPingPeerError(error: unknown): never {
+    if (error instanceof SpawnPeerError) {
+        throw error
+    }
+    if (error instanceof PingPeerError) {
+        throw new SpawnPeerError(error.code, error.message)
+    }
+    throw new SpawnPeerError(
+        'send_failed',
+        error instanceof Error ? error.message : String(error)
+    )
+}
+
+function collapsedRemitNeedle(message: string): string {
+    return message.replace(/\s+/g, ' ').trim().slice(0, 800)
+}
+
+async function sessionHasRemit(
+    apiUrl: string,
+    jwt: string,
+    sessionId: string,
+    message: string,
+    http: AxiosInstance
+): Promise<boolean> {
+    const needle = collapsedRemitNeedle(message)
+    if (!needle) {
+        return false
+    }
+    const response = await http.get(
+        `${apiUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages`,
+        {
+            headers: authHeaders(jwt),
+            params: { limit: 50 },
+            timeout: 20_000,
+            validateStatus: () => true
+        }
+    )
+    if (response.status < 200 || response.status >= 300) {
+        return false
+    }
+    const rows = Array.isArray(response.data?.messages) ? response.data.messages : []
+    for (const row of rows) {
+        if (!isObject(row)) continue
+        const snippet = extractInspectMessageSnippet(row.content)
+        if (snippet?.role === 'user' && snippet.text.includes(needle)) {
+            return true
+        }
+    }
+    return false
+}
+
+export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerResult> {
+    const directory = (options.directory ?? '').trim()
+    const message = options.message ?? ''
+    if (!directory) {
+        throw new SpawnPeerError('bad_args', 'directory is required')
+    }
+    if (!message.trim()) {
+        throw new SpawnPeerError(
+            'bad_args',
+            'message is required; empty remit would create an idle session'
+        )
+    }
+
+    if (options.agent && !(CREATABLE_AGENT_FLAVORS as readonly string[]).includes(options.agent)) {
+        throw new SpawnPeerError('bad_args', `unsupported agent: ${options.agent}`)
+    }
+
+    const waitActiveSecs = options.waitActiveSecs ?? DEFAULT_WAIT_ACTIVE_SECS
+    if (!Number.isFinite(waitActiveSecs) || waitActiveSecs <= 0) {
+        throw new SpawnPeerError('bad_args', 'waitActiveSecs must be a positive number')
+    }
+
+    const sessionType = options.sessionType ?? 'simple'
+    const apiUrl = resolveApiUrl(options.apiUrl)
+    const accessToken = resolveAccessToken(options.accessToken)
+    const http = options.http ?? axios
+    const sleep = options.sleep ?? defaultSleep
+    const now = options.now ?? Date.now
+    const onProgress = options.onProgress
+
+    let machineId = (options.machineId ?? '').trim()
+    if (!machineId) {
+        const settings = await readSettings()
+        machineId = (settings.machineId ?? '').trim()
+    }
+    if (!machineId) {
+        throw new SpawnPeerError(
+            'bad_args',
+            `machineId is required (run \`hapi auth login\` / start the runner). ${AUTH_RECOVERY_HINT}`
+        )
+    }
+
+    const jwt = await exchangeJwt(apiUrl, accessToken, http)
+
+    const spawnBody: Record<string, unknown> = {
+        directory,
+        sessionType
+    }
+    if (options.agent) {
+        spawnBody.agent = options.agent
+    }
+    if (options.worktreeName) {
+        spawnBody.worktreeName = options.worktreeName
+    }
+    if (options.permissionMode) {
+        spawnBody.permissionMode = options.permissionMode
+    }
+
+    onProgress?.(`spawning agent=${options.agent ?? '(hub default)'} type=${sessionType} dir=${directory}`)
+    const spawnResponse = await http.post(
+        `${apiUrl}/api/machines/${encodeURIComponent(machineId)}/spawn`,
+        spawnBody,
+        {
+            headers: authHeaders(jwt),
+            timeout: 60_000,
+            validateStatus: () => true
+        }
+    )
+    const spawnData = spawnResponse.data as { type?: string; sessionId?: string; message?: string; error?: string } | undefined
+    const sessionId = typeof spawnData?.sessionId === 'string' ? spawnData.sessionId : ''
+    if (
+        spawnResponse.status < 200
+        || spawnResponse.status >= 300
+        || spawnData?.type === 'error'
+        || !sessionId
+    ) {
+        const detail = spawnData?.message
+            || spawnData?.error
+            || (spawnData?.type === 'success' && !sessionId ? 'spawn returned no sessionId' : `HTTP ${spawnResponse.status}`)
+        throw new SpawnPeerError('spawn_failed', `spawn failed: ${detail}`)
+    }
+    onProgress?.(`spawned ${sessionId}`)
+
+    const requestedName = options.name?.trim() ?? ''
+    let renamed = false
+    if (requestedName) {
+        try {
+            const renameResponse = await http.patch(
+                `${apiUrl}/api/sessions/${encodeURIComponent(sessionId)}`,
+                { name: requestedName },
+                {
+                    headers: authHeaders(jwt),
+                    timeout: 10_000,
+                    validateStatus: () => true
+                }
+            )
+            if (renameResponse.status >= 200 && renameResponse.status < 300 && renameResponse.data?.ok === true) {
+                renamed = true
+                onProgress?.(`renamed → ${requestedName}`)
+            } else {
+                onProgress?.('rename failed (continuing to deliver remit)')
+            }
+        } catch {
+            onProgress?.('rename failed (continuing to deliver remit)')
+        }
+    }
+
+    onProgress?.(`delivering remit (${message.length} chars) via ping-peer path...`)
+    let pingResult: { sessionId: string; name: string }
+    try {
+        pingResult = await pingPeer({
+            sessionId,
+            message,
+            waitActiveSecs,
+            apiUrl,
+            accessToken,
+            http,
+            sleep,
+            now,
+            onProgress
+        })
+    } catch (error) {
+        wrapPingPeerError(error)
+    }
+
+    const deadline = now() + waitActiveSecs * 1000
+    while (now() <= deadline) {
+        if (await sessionHasRemit(apiUrl, jwt, sessionId, message, http)) {
+            return {
+                sessionId,
+                name: renamed ? requestedName : pingResult.name
+            }
+        }
+        if (now() >= deadline) {
+            break
+        }
+        await sleep(POLL_VERIFY_MS)
+    }
+
+    throw new SpawnPeerError(
+        'empty_session',
+        `session ${sessionId} still has no user message after remit delivery (empty shell). ` +
+            `Re-run: hapi ping-peer ${sessionId} --message-file <brief>`
+    )
+}
+
+export function exitCodeForSpawnPeerError(error: SpawnPeerError): number {
+    switch (error.code) {
+        case 'bad_args':
+        case 'auth_failed':
+        case 'not_found':
+        case 'ambiguous':
+            return 2
+        case 'spawn_failed':
+        case 'resume_failed':
+            return 3
+        case 'timeout':
+        case 'send_failed':
+        case 'empty_session':
+            return 4
+        default:
+            return 1
+    }
+}

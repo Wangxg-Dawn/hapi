@@ -50,7 +50,9 @@ export type PingPeerSessionSummary = {
 }
 
 export type PingPeerOptions = {
-    sessionIdPrefix: string
+    sessionIdPrefix?: string
+    /** When set, skip list+prefix resolve and load this session directly. */
+    sessionId?: string
     message: string
     waitActiveSecs?: number
     apiUrl?: string
@@ -456,9 +458,10 @@ export function formatPeerSessionsList(
 }
 
 export async function pingPeer(options: PingPeerOptions): Promise<PingPeerResult> {
-    const prefix = normalizeSessionIdPrefix(options.sessionIdPrefix ?? '')
+    const knownSessionId = (options.sessionId ?? '').trim()
+    const prefix = knownSessionId ? '' : normalizeSessionIdPrefix(options.sessionIdPrefix ?? '')
     const message = options.message ?? ''
-    if (!prefix) {
+    if (!knownSessionId && !prefix) {
         throw new PingPeerError('bad_args', 'session id prefix is required')
     }
     if (!message) {
@@ -478,8 +481,9 @@ export async function pingPeer(options: PingPeerOptions): Promise<PingPeerResult
     const onProgress = options.onProgress
 
     const jwt = await exchangeJwt(apiUrl, accessToken, http)
-    const sessions = await listSessions(apiUrl, jwt, http)
-    const matched = resolveSessionByPrefix(sessions, prefix)
+    const matched = knownSessionId
+        ? await getSession(apiUrl, jwt, knownSessionId, http)
+        : resolveSessionByPrefix(await listSessions(apiUrl, jwt, http), prefix)
     const name = resolvePeerSessionLabel(matched)
     onProgress?.(`resolved ${matched.id}  active=${matched.active}  name="${name}"`)
 

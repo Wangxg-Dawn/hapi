@@ -112,4 +112,16 @@ describe('buildSessionCitationSteerInstruction', () => {
         expect(text).toContain('mcp__hapi__list_peers')
         expect(text.toLowerCase()).toMatch(/not.*(grep|glob|filesystem|local file)/i)
     })
+
+    it('teaches spawn_peer for new peers with work and forbids stuffing remit into machine spawn', () => {
+        const text = buildSessionCitationSteerInstruction({
+            inspectTool: 'mcp__hapi__inspect_peer',
+            pingTool: 'mcp__hapi__ping_peer',
+            listPeersTool: 'mcp__hapi__list_peers',
+            spawnTool: 'mcp__hapi__spawn_peer',
+        })
+        expect(text).toContain('mcp__hapi__spawn_peer')
+        expect(text).toMatch(/spawn-peer|spawn_peer/)
+        expect(text.toLowerCase()).toMatch(/machines.*spawn|empty/)
+    })
 })
