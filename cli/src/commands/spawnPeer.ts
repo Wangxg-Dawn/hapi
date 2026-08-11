@@ -40,7 +40,7 @@ ${chalk.bold('Notes:')}
   Same hub token/namespace as this CLI. Prefer MCP spawn_peer in-session.
 
 ${chalk.bold('Options:')}
-  --dir PATH              Working directory on this machine (required)
+  --dir PATH              Working directory on this machine (required; relative paths resolve here, not in the runner)
   --name TITLE            Session display name (required, 1-255 chars)
   --message-file PATH|-   Remit text (or - for stdin)
   --agent NAME            Agent flavor (default: hub default, usually claude)

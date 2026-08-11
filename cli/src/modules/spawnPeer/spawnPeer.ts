@@ -12,6 +12,7 @@
  * namespace as ping-peer. Callers must not invent parallel auth.
  */
 
+import { resolve as resolvePath } from 'node:path'
 import axios, { type AxiosInstance } from 'axios'
 import { isObject, SESSION_NAME_MAX_LENGTH } from '@hapi/protocol'
 import {
@@ -157,6 +158,27 @@ async function exchangeJwt(
     }
 }
 
+async function archiveFailedSpawn(
+    apiUrl: string,
+    jwt: string,
+    sessionId: string,
+    http: AxiosInstance
+): Promise<void> {
+    try {
+        await http.post(
+            `${apiUrl}/api/sessions/${encodeURIComponent(sessionId)}/archive`,
+            {},
+            {
+                headers: authHeaders(jwt),
+                timeout: 15_000,
+                validateStatus: () => true
+            }
+        )
+    } catch {
+        // Best-effort: keep the original spawn/delivery error.
+    }
+}
+
 function wrapPingPeerError(error: unknown): never {
     if (error instanceof SpawnPeerError) {
         throw error
@@ -209,11 +231,14 @@ async function sessionHasRemit(
 }
 
 export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerResult> {
-    const directory = (options.directory ?? '').trim()
+    const rawDirectory = (options.directory ?? '').trim()
     const message = options.message ?? ''
-    if (!directory) {
+    if (!rawDirectory) {
         throw new SpawnPeerError('bad_args', 'directory is required')
     }
+    // Runner RPC resolves relative paths against the long-lived runner cwd
+    // (`hapi runner start`), not the calling CLI/MCP process. Anchor here.
+    const directory = resolvePath(rawDirectory)
     if (!message.trim()) {
         throw new SpawnPeerError(
             'bad_args',
@@ -344,6 +369,7 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
             onProgress
         })
     } catch (error) {
+        await archiveFailedSpawn(apiUrl, jwt, sessionId, http)
         wrapPingPeerError(error)
     }
 
@@ -361,10 +387,11 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
         await sleep(POLL_VERIFY_MS)
     }
 
+    await archiveFailedSpawn(apiUrl, jwt, sessionId, http)
     throw new SpawnPeerError(
         'empty_session',
-        `session ${sessionId} still has no user message after remit delivery (empty shell). ` +
-            `Re-run: hapi ping-peer ${sessionId} --message-file <brief>`
+        `session ${sessionId} still has no user message after remit delivery (empty shell); ` +
+            `archived the failed child. Retry spawn-peer; do not ping the archived id.`
     )
 }
 

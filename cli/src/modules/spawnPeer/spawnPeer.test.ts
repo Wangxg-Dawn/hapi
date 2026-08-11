@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
     SpawnPeerError,
@@ -199,6 +200,9 @@ describe('spawnPeer', () => {
                     delivered = body
                     return { status: 200, data: { ok: true } }
                 }
+                if (url.endsWith(`/api/sessions/${SESSION_ID}/archive`)) {
+                    throw new Error('happy-path spawn must not archive the child')
+                }
                 throw new Error(`unexpected POST ${url}`)
             },
             patch: (url, body) => {
@@ -331,6 +335,95 @@ describe('spawnPeer', () => {
         expect(resumeCalls).toBe(0)
     })
 
+    it('resolves a relative directory in the caller before the spawn POST', async () => {
+        let spawnedBody: Record<string, unknown> | undefined
+        const http = createHttpMock({
+            post: (url, body) => {
+                if (url.endsWith('/api/auth')) {
+                    return { status: 200, data: { token: 'jwt' } }
+                }
+                if (url.endsWith(`/api/machines/${MACHINE_ID}/spawn`)) {
+                    spawnedBody = body as Record<string, unknown>
+                    return { status: 200, data: { type: 'success', sessionId: SESSION_ID } }
+                }
+                if (url.endsWith(`/api/sessions/${SESSION_ID}/messages`)) {
+                    return { status: 200, data: { ok: true } }
+                }
+                throw new Error(`unexpected POST ${url}`)
+            },
+            get: (url) => {
+                if (url.endsWith(`/api/sessions/${SESSION_ID}`)) {
+                    return {
+                        status: 200,
+                        data: {
+                            session: {
+                                id: SESSION_ID,
+                                active: true,
+                                metadata: { name: 'Rel', flavor: 'claude' }
+                            }
+                        }
+                    }
+                }
+                if (url.includes(`/api/sessions/${SESSION_ID}/messages`)) {
+                    return {
+                        status: 200,
+                        data: { messages: [userMessageRow('brief')] }
+                    }
+                }
+                throw new Error(`unexpected GET ${url}`)
+            }
+        })
+
+        await spawnPeer({
+            directory: 'relative-peer-dir',
+            message: 'brief',
+            machineId: MACHINE_ID,
+            accessToken: 'tok',
+            apiUrl: 'http://hub.test',
+            http: http as never
+        })
+
+        expect(spawnedBody?.directory).toBe(resolve('relative-peer-dir'))
+    })
+
+    it('archives the child when ping-peer delivery throws after spawn', async () => {
+        const http = createHttpMock({
+            post: (url) => {
+                if (url.endsWith('/api/auth')) {
+                    return { status: 200, data: { token: 'jwt' } }
+                }
+                if (url.endsWith(`/api/machines/${MACHINE_ID}/spawn`)) {
+                    return { status: 200, data: { type: 'success', sessionId: SESSION_ID } }
+                }
+                if (url.endsWith(`/api/sessions/${SESSION_ID}/archive`)) {
+                    return { status: 200, data: { ok: true } }
+                }
+                throw new Error(`unexpected POST ${url}`)
+            },
+            get: (url) => {
+                if (url.endsWith(`/api/sessions/${SESSION_ID}`)) {
+                    return { status: 404, data: { error: 'missing' } }
+                }
+                throw new Error(`unexpected GET ${url}`)
+            }
+        })
+
+        await expect(spawnPeer({
+            directory: '/tmp/project',
+            message: 'brief',
+            machineId: MACHINE_ID,
+            accessToken: 'tok',
+            apiUrl: 'http://hub.test',
+            http: http as never
+        })).rejects.toMatchObject({ code: 'not_found' })
+
+        expect(http.post).toHaveBeenCalledWith(
+            `http://hub.test/api/sessions/${SESSION_ID}/archive`,
+            {},
+            expect.anything()
+        )
+    })
+
     it('fails closed when spawn+send succeed but the session still has no user message', async () => {
         const http = createHttpMock({
             post: (url) => {
@@ -341,6 +434,9 @@ describe('spawnPeer', () => {
                     return { status: 200, data: { type: 'success', sessionId: SESSION_ID } }
                 }
                 if (url.endsWith(`/api/sessions/${SESSION_ID}/messages`)) {
+                    return { status: 200, data: { ok: true } }
+                }
+                if (url.endsWith(`/api/sessions/${SESSION_ID}/archive`)) {
                     return { status: 200, data: { ok: true } }
                 }
                 throw new Error(`unexpected POST ${url}`)
@@ -390,6 +486,12 @@ describe('spawnPeer', () => {
                 nowMs += ms
             }
         })).rejects.toMatchObject({ code: 'empty_session' })
+
+        expect(http.post).toHaveBeenCalledWith(
+            `http://hub.test/api/sessions/${SESSION_ID}/archive`,
+            {},
+            expect.anything()
+        )
     })
 
     it('passes an explicit permissionMode and does not clone yolo', async () => {
@@ -471,6 +573,9 @@ describe('spawnPeer', () => {
                     return { status: 200, data: { type: 'success', sessionId: SESSION_ID } }
                 }
                 if (url.endsWith(`/api/sessions/${SESSION_ID}/messages`)) {
+                    return { status: 200, data: { ok: true } }
+                }
+                if (url.endsWith(`/api/sessions/${SESSION_ID}/archive`)) {
                     return { status: 200, data: { ok: true } }
                 }
                 throw new Error(`unexpected POST ${url}`)
