@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import chalk from 'chalk'
+import { SESSION_NAME_MAX_LENGTH } from '@hapi/protocol'
 import { CREATABLE_AGENT_FLAVORS, type AgentFlavor, type PermissionMode } from '@hapi/protocol/modes'
 import { PermissionModeSchema } from '@hapi/protocol/schemas'
 import { initializeToken } from '@/ui/tokenInit'
@@ -33,14 +34,14 @@ ${chalk.bold('Usage:')}
 
 ${chalk.bold('Notes:')}
   Machine spawn (POST /api/machines/:id/spawn) creates an empty composer.
-  Do not put the remit in the spawn JSON - extra keys are rejected/stripped.
+  Do not put the remit in the spawn JSON - the hub 400s message/prompt/text.
   This command spawns, optionally renames, delivers via the ping-peer path,
   then exits non-zero if the new session still has no user message.
   Same hub token/namespace as this CLI. Prefer MCP spawn_peer in-session.
 
 ${chalk.bold('Options:')}
   --dir PATH              Working directory on this machine (required)
-  --name TITLE            Session display name (required)
+  --name TITLE            Session display name (required, 1-255 chars)
   --message-file PATH|-   Remit text (or - for stdin)
   --agent NAME            Agent flavor (default: hub default, usually claude)
   --session-type TYPE     simple | worktree (default: simple; worktree creates a new tree from PATH)
@@ -238,16 +239,20 @@ export async function handleSpawnPeerCommand(args: string[]): Promise<void> {
         return
     }
 
-    await initializeToken()
-
     if (!parsed.directory) {
         showHelp()
         throw new SpawnPeerError('bad_args', 'missing --dir; usage: hapi spawn-peer --dir PATH --name TITLE --message-file -')
     }
-    if (!parsed.name?.trim()) {
+    const name = parsed.name?.trim() ?? ''
+    if (!name || name.length > SESSION_NAME_MAX_LENGTH) {
         showHelp()
-        throw new SpawnPeerError('bad_args', 'missing --name; usage: hapi spawn-peer --dir PATH --name TITLE --message-file -')
+        throw new SpawnPeerError(
+            'bad_args',
+            `--name must be 1-${SESSION_NAME_MAX_LENGTH} characters`
+        )
     }
+
+    await initializeToken()
 
     const message = await readMessage(parsed)
     if (!message.trim()) {
@@ -260,7 +265,7 @@ export async function handleSpawnPeerCommand(args: string[]): Promise<void> {
     const result = await spawnPeer({
         directory: parsed.directory,
         message,
-        name: parsed.name,
+        name,
         agent: parsed.agent,
         sessionType: parsed.sessionType,
         permissionMode: parsed.permissionMode,

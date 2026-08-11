@@ -75,6 +75,26 @@ describe('spawnPeer', () => {
         })).rejects.toMatchObject({ code: 'bad_args' })
     })
 
+    it('rejects a name longer than the hub rename max before spawn', async () => {
+        const http = createHttpMock({
+            post: (url) => {
+                throw new Error(`spawn must not run; unexpected POST ${url}`)
+            }
+        })
+
+        await expect(spawnPeer({
+            directory: '/tmp/project',
+            message: 'do the work',
+            name: 'n'.repeat(256),
+            machineId: MACHINE_ID,
+            accessToken: 'tok',
+            apiUrl: 'http://hub.test',
+            http: http as never
+        })).rejects.toMatchObject({ code: 'bad_args' })
+
+        expect(http.post).not.toHaveBeenCalled()
+    })
+
     it('maps spawn type=error to spawn_failed', async () => {
         const http = createHttpMock({
             post: (url) => {

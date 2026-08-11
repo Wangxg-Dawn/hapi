@@ -2,17 +2,18 @@
  * Spawn a new HAPI session with a required first user message (remit).
  *
  * Machine spawn (`POST /api/machines/:id/spawn`) creates an idle composer.
- * Extra JSON keys such as `message` are stripped. This module is the
- * fail-closed path: spawn → optional rename → ping-peer delivery →
- * verify at least one user message. HTTP 200 + sessionId with 0 messages
- * is a failed spawn (tiann/hapi#1509).
+ * A spawn body with `message`/`prompt`/`text` is HTTP 400
+ * (`spawn_remit_not_supported`). This module is the fail-closed path:
+ * spawn → optional rename → ping-peer delivery → verify at least one
+ * user message. HTTP 200 + sessionId with 0 messages is a failed spawn
+ * (tiann/hapi#1509).
  *
  * Shared by `hapi spawn-peer` and MCP `spawn_peer`. Same hub JWT /
  * namespace as ping-peer. Callers must not invent parallel auth.
  */
 
 import axios, { type AxiosInstance } from 'axios'
-import { isObject } from '@hapi/protocol'
+import { isObject, SESSION_NAME_MAX_LENGTH } from '@hapi/protocol'
 import { CREATABLE_AGENT_FLAVORS, type AgentFlavor, type PermissionMode } from '@hapi/protocol/modes'
 import { configuration } from '@/configuration'
 import { getAuthToken } from '@/api/auth'
@@ -214,6 +215,13 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
             'message is required; empty remit would create an idle session'
         )
     }
+    const requestedName = (options.name ?? '').trim()
+    if (requestedName.length > SESSION_NAME_MAX_LENGTH) {
+        throw new SpawnPeerError(
+            'bad_args',
+            `name must be at most ${SESSION_NAME_MAX_LENGTH} characters (hub rename max)`
+        )
+    }
 
     if (options.agent && !(CREATABLE_AGENT_FLAVORS as readonly string[]).includes(options.agent)) {
         throw new SpawnPeerError('bad_args', `unsupported agent: ${options.agent}`)
@@ -285,7 +293,6 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
     }
     onProgress?.(`spawned ${sessionId}`)
 
-    const requestedName = options.name?.trim() ?? ''
     let renamed = false
     if (requestedName) {
         try {

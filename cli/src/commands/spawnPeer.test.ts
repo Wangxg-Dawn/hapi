@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SpawnPeerError } from '@/modules/spawnPeer/spawnPeer'
-import { parseSpawnPeerArgs } from './spawnPeer'
+import { handleSpawnPeerCommand, parseSpawnPeerArgs } from './spawnPeer'
 
 describe('parseSpawnPeerArgs', () => {
     it('parses --dir, --name, and positional message', () => {
@@ -49,5 +49,15 @@ describe('parseSpawnPeerArgs', () => {
             '--name', 'P',
             '--session-type', 'relocate'
         ])).toThrow(SpawnPeerError)
+    })
+})
+
+describe('handleSpawnPeerCommand', () => {
+    it('rejects --name over 255 characters before touching the hub', async () => {
+        await expect(handleSpawnPeerCommand([
+            '--dir', '/tmp/project',
+            '--name', 'n'.repeat(256),
+            'do the work'
+        ])).rejects.toMatchObject({ code: 'bad_args' })
     })
 })

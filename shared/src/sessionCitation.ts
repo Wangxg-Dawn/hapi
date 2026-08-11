@@ -29,7 +29,7 @@ export const SPAWN_PEER_TOOL_DESCRIPTION =
     'Spawn a new HAPI session on this machine and deliver a required first user message (the remit). ' +
     'Creates the session, optionally names it, then uses the same delivery path as ping_peer. ' +
     'Returns the new sessionId + name. Fails if the remit does not land (a sessionId with 0 user messages is a failed spawn). ' +
-    'Do not call POST /api/machines/…/spawn with a message field — that field is stripped and the peer stays idle. ' +
+    'Do not call POST /api/machines/.../spawn with a message field - the hub rejects it. Use spawn_peer to create and deliver the remit. ' +
     'Prefer this (or `hapi spawn-peer`) over JWT+curl. Same hub/namespace as this session. ' +
     'Does not clone the parent session\'s bypassPermissions; pass permissionMode only when the operator asked.'
 
@@ -166,8 +166,8 @@ export function buildSessionCitationSteerInstruction(tools: SessionCitationSteer
         text +=
             ` To spawn a new peer with work attached, call "${tools.spawnTool}" ` +
             `with directory and a required message (the remit). ` +
-            `Do not POST /api/machines/…/spawn with a message/prompt/text field — ` +
-            `that field is not a first prompt and the new session stays empty. ` +
+            `Do not POST /api/machines/.../spawn with a message/prompt/text field - ` +
+            `the hub rejects it (HTTP 400). Use spawn_peer instead. ` +
             `Shell fallback: hapi spawn-peer --dir PATH --name TITLE --message-file -.`
     }
     return text

@@ -21,6 +21,7 @@ import {
 import type { InlineMediaSource } from "@/modules/common/inlineMediaSource";
 import { DISPLAY_IMAGE_PROMPT_CURSOR, DISPLAY_MEDIA_PROMPT_CURSOR, DISPLAY_VIDEO_PROMPT_CURSOR } from "@/modules/common/displayImagePrompt";
 import { resolveSkill } from "@/modules/common/skills";
+import { SESSION_NAME_MAX_LENGTH } from '@hapi/protocol'
 import {
     INSPECT_PEER_TOOL_DESCRIPTION,
     PING_PEER_TOOL_DESCRIPTION,
@@ -121,7 +122,7 @@ function createHapiMcpServer(
     const spawnPeerInputSchema: z.ZodTypeAny = z.object({
         directory: z.string().trim().min(1).describe('Working directory for the new session on this machine'),
         message: z.string().min(1).describe('Required first user message (the remit). Empty spawn is a failed spawn.'),
-        name: z.string().trim().min(1).max(255).optional().describe('Session display name'),
+        name: z.string().trim().min(1).max(SESSION_NAME_MAX_LENGTH).optional().describe('Session display name'),
         agent: z.enum(CREATABLE_AGENT_FLAVORS as unknown as [string, ...string[]]).optional()
             .describe('Agent flavor. Hub default if omitted. Does not silently clone the parent.'),
         sessionType: z.enum(['simple', 'worktree']).optional()
