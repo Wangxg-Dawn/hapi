@@ -235,7 +235,11 @@ export async function runHappyMcpStdioBridge(argv: string[]): Promise<void> {
       message: z.string().min(1).describe('Required first user message (the remit). Empty spawn is a failed spawn.'),
       name: z.string().trim().min(1).max(SESSION_NAME_MAX_LENGTH).optional().describe('Session display name'),
       agent: z.enum(CREATABLE_AGENT_FLAVORS as unknown as [string, ...string[]]).optional()
-        .describe('Agent flavor. Hub default if omitted. Does not silently clone the parent.'),
+        .describe('Agent flavor override. When omitted, uses hub peerSpawnDefaults then stock claude.'),
+      model: z.string().trim().min(1).optional()
+        .describe('Model override for the resolved agent flavor.'),
+      effort: z.string().trim().min(1).optional()
+        .describe('Effort override (flavor-dependent).'),
       sessionType: z.enum(['simple', 'worktree']).optional()
         .describe('simple or worktree. Default simple (use directory as cwd). worktree creates a new tree from directory.'),
       permissionMode: PermissionModeSchema.optional()

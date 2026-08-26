@@ -21,6 +21,10 @@ import {
     type AgentFlavor,
     type PermissionMode
 } from '@hapi/protocol/modes'
+import {
+    resolvePeerSpawnConfig,
+    type PeerSpawnDefaults
+} from '@hapi/protocol/peerSpawnDefaults'
 import { configuration } from '@/configuration'
 import { getAuthToken } from '@/api/auth'
 import { buildHubRequestHeaders } from '@/api/hubExtraHeaders'
@@ -57,6 +61,8 @@ export type SpawnPeerOptions = {
     message: string
     name?: string
     agent?: AgentFlavor
+    model?: string
+    effort?: string
     sessionType?: 'simple' | 'worktree'
     worktreeName?: string
     permissionMode?: PermissionMode
@@ -64,6 +70,8 @@ export type SpawnPeerOptions = {
     waitActiveSecs?: number
     apiUrl?: string
     accessToken?: string
+    /** Skip hub settings fetch (tests). */
+    hubPeerSpawnDefaults?: PeerSpawnDefaults | null
     http?: AxiosInstance
     sleep?: (ms: number) => Promise<void>
     now?: () => number
@@ -155,6 +163,28 @@ async function exchangeJwt(
             'auth_failed',
             `failed to exchange access token for JWT (${error instanceof Error ? error.message : String(error)}). Hub URL: ${apiUrl}. ${AUTH_RECOVERY_HINT}`
         )
+    }
+}
+
+async function fetchHubPeerSpawnDefaults(
+    apiUrl: string,
+    jwt: string,
+    http: AxiosInstance
+): Promise<PeerSpawnDefaults | null> {
+    try {
+        const response = await http.get(`${apiUrl}/api/hub-settings`, {
+            headers: authHeaders(jwt),
+            timeout: 10_000,
+            validateStatus: () => true
+        })
+        if (response.status < 200 || response.status >= 300) {
+            return null
+        }
+        const peerSpawnDefaults = (response.data as { peerSpawnDefaults?: PeerSpawnDefaults } | undefined)
+            ?.peerSpawnDefaults
+        return peerSpawnDefaults ?? null
+    } catch {
+        return null
     }
 }
 
@@ -255,11 +285,11 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
     if (options.agent && !(CREATABLE_AGENT_FLAVORS as readonly string[]).includes(options.agent)) {
         throw new SpawnPeerError('bad_args', `unsupported agent: ${options.agent}`)
     }
-    const flavor = options.agent ?? 'claude'
-    if (options.permissionMode && !isPermissionModeAllowedForFlavor(options.permissionMode, flavor)) {
+    const previewAgent = options.agent ?? 'claude'
+    if (options.permissionMode && !isPermissionModeAllowedForFlavor(options.permissionMode, previewAgent)) {
         throw new SpawnPeerError(
             'bad_args',
-            `permission mode ${options.permissionMode} is not supported by ${flavor}`
+            `permission mode ${options.permissionMode} is not supported by ${previewAgent}`
         )
     }
 
@@ -290,21 +320,33 @@ export async function spawnPeer(options: SpawnPeerOptions): Promise<SpawnPeerRes
 
     const jwt = await exchangeJwt(apiUrl, accessToken, http)
 
+    const hubDefaults = options.hubPeerSpawnDefaults !== undefined
+        ? options.hubPeerSpawnDefaults
+        : await fetchHubPeerSpawnDefaults(apiUrl, jwt, http)
+    const resolved = resolvePeerSpawnConfig({
+        agent: options.agent,
+        permissionMode: options.permissionMode,
+        model: options.model,
+        effort: options.effort
+    }, hubDefaults)
+
     const spawnBody: Record<string, unknown> = {
         directory,
-        sessionType
-    }
-    if (options.agent) {
-        spawnBody.agent = options.agent
+        sessionType,
+        agent: resolved.agent,
+        permissionMode: resolved.permissionMode
     }
     if (options.worktreeName) {
         spawnBody.worktreeName = options.worktreeName
     }
-    if (options.permissionMode) {
-        spawnBody.permissionMode = options.permissionMode
+    if (resolved.model) {
+        spawnBody.model = resolved.model
+    }
+    if (resolved.effort) {
+        spawnBody.effort = resolved.effort
     }
 
-    onProgress?.(`spawning agent=${options.agent ?? '(hub default)'} type=${sessionType} dir=${directory}`)
+    onProgress?.(`spawning agent=${resolved.agent} permission=${resolved.permissionMode} type=${sessionType} dir=${directory}`)
     const spawnResponse = await http.post(
         `${apiUrl}/api/machines/${encodeURIComponent(machineId)}/spawn`,
         spawnBody,

@@ -18,6 +18,8 @@ type ParsedSpawnPeerArgs = {
     message?: string
     messageFile?: string
     agent?: AgentFlavor
+    model?: string
+    effort?: string
     sessionType?: 'simple' | 'worktree'
     permissionMode?: PermissionMode
     waitActiveSecs?: number
@@ -43,7 +45,9 @@ ${chalk.bold('Options:')}
   --dir PATH              Working directory on this machine (required; relative paths resolve here, not in the runner)
   --name TITLE            Session display name (required, 1-255 chars)
   --message-file PATH|-   Remit text (or - for stdin)
-  --agent NAME            Agent flavor (default: hub default, usually claude)
+  --agent NAME            Agent flavor (default: hub peerSpawnDefaults, else claude)
+  --model ID              Model override for the resolved agent flavor
+  --effort LEVEL          Effort override (flavor-dependent; e.g. claude high)
   --session-type TYPE     simple | worktree (default: simple; worktree creates a new tree from PATH)
   --permission-mode MODE  Operator-visible mode for the new session (not cloned from parent)
   --wait SECONDS          Active/verify timeout (default 60, or HAPI_WAIT_ACTIVE_SECS)
@@ -123,6 +127,38 @@ export function parseSpawnPeerArgs(args: string[]): ParsedSpawnPeerArgs {
         }
         if (arg.startsWith('--agent=')) {
             result.agent = parseAgent(arg.slice('--agent='.length))
+            continue
+        }
+        if (arg === '--model') {
+            const value = args[++i]
+            if (!value) {
+                throw new SpawnPeerError('bad_args', '--model requires a model id')
+            }
+            result.model = value
+            continue
+        }
+        if (arg.startsWith('--model=')) {
+            const value = arg.slice('--model='.length)
+            if (!value) {
+                throw new SpawnPeerError('bad_args', '--model requires a model id')
+            }
+            result.model = value
+            continue
+        }
+        if (arg === '--effort') {
+            const value = args[++i]
+            if (!value) {
+                throw new SpawnPeerError('bad_args', '--effort requires a level')
+            }
+            result.effort = value
+            continue
+        }
+        if (arg.startsWith('--effort=')) {
+            const value = arg.slice('--effort='.length)
+            if (!value) {
+                throw new SpawnPeerError('bad_args', '--effort requires a level')
+            }
+            result.effort = value
             continue
         }
         if (arg === '--session-type') {
@@ -267,6 +303,8 @@ export async function handleSpawnPeerCommand(args: string[]): Promise<void> {
         message,
         name,
         agent: parsed.agent,
+        model: parsed.model,
+        effort: parsed.effort,
         sessionType: parsed.sessionType,
         permissionMode: parsed.permissionMode,
         waitActiveSecs: parsed.waitActiveSecs ?? envWaitActiveSecs(),

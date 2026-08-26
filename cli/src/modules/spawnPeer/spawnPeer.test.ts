@@ -263,13 +263,14 @@ describe('spawnPeer', () => {
         expect(spawnedBody).toMatchObject({
             directory: '/home/u/coding/hapi/worktrees/spawn-peer-remit',
             agent: 'cursor',
+            permissionMode: 'yolo',
             sessionType: 'simple'
         })
         expect(spawnedBody).not.toHaveProperty('message')
         expect(spawnedBody).not.toHaveProperty('prompt')
         expect(spawnedBody).not.toHaveProperty('text')
         expect(spawnedBody).not.toHaveProperty('yolo')
-        expect(spawnedBody).not.toHaveProperty('permissionMode')
+        expect(spawnedBody).toHaveProperty('permissionMode', 'yolo')
         expect(delivered).toEqual({ text: 'do the work' })
         expect(http.patch).toHaveBeenCalledTimes(1)
     })
@@ -788,6 +789,132 @@ describe('spawnPeer', () => {
         })
     })
 
+    it('applies hub peerSpawnDefaults when explicit args are omitted', async () => {
+        let spawnedBody: Record<string, unknown> | undefined
+        const http = createHttpMock({
+            post: (url, body) => {
+                if (url.endsWith('/api/auth')) {
+                    return { status: 200, data: { token: 'jwt' } }
+                }
+                if (url.endsWith(`/api/machines/${MACHINE_ID}/spawn`)) {
+                    spawnedBody = body as Record<string, unknown>
+                    return { status: 200, data: { type: 'success', sessionId: SESSION_ID } }
+                }
+                if (url.endsWith(`/api/sessions/${SESSION_ID}/messages`)) {
+                    return { status: 200, data: { ok: true } }
+                }
+                throw new Error(`unexpected POST ${url}`)
+            },
+            get: (url) => {
+                if (url.endsWith('/api/hub-settings')) {
+                    return {
+                        status: 200,
+                        data: {
+                            sessionSummaryContract: false,
+                            peerSpawnDefaults: {
+                                agent: 'codex',
+                                permissionMode: 'read-only',
+                                models: { codex: 'gpt-5' }
+                            }
+                        }
+                    }
+                }
+                if (url.endsWith(`/api/sessions/${SESSION_ID}`)) {
+                    return {
+                        status: 200,
+                        data: {
+                            session: {
+                                id: SESSION_ID,
+                                active: true,
+                                metadata: { name: 'Hub defaults', flavor: 'codex' }
+                            }
+                        }
+                    }
+                }
+                if (url.includes(`/api/sessions/${SESSION_ID}/messages`)) {
+                    return {
+                        status: 200,
+                        data: { messages: [userMessageRow('brief')] }
+                    }
+                }
+                throw new Error(`unexpected GET ${url}`)
+            }
+        })
+
+        await spawnPeer({
+            directory: '/tmp/project',
+            message: 'brief',
+            machineId: MACHINE_ID,
+            accessToken: 'tok',
+            apiUrl: 'http://hub.test',
+            http: http as never
+        })
+
+        expect(spawnedBody).toMatchObject({
+            agent: 'codex',
+            permissionMode: 'read-only',
+            model: 'gpt-5'
+        })
+    })
+
+    it('forwards explicit model and effort overrides', async () => {
+        let spawnedBody: Record<string, unknown> | undefined
+        const http = createHttpMock({
+            post: (url, body) => {
+                if (url.endsWith('/api/auth')) {
+                    return { status: 200, data: { token: 'jwt' } }
+                }
+                if (url.endsWith(`/api/machines/${MACHINE_ID}/spawn`)) {
+                    spawnedBody = body as Record<string, unknown>
+                    return { status: 200, data: { type: 'success', sessionId: SESSION_ID } }
+                }
+                if (url.endsWith(`/api/sessions/${SESSION_ID}/messages`)) {
+                    return { status: 200, data: { ok: true } }
+                }
+                throw new Error(`unexpected POST ${url}`)
+            },
+            get: (url) => {
+                if (url.endsWith(`/api/sessions/${SESSION_ID}`)) {
+                    return {
+                        status: 200,
+                        data: {
+                            session: {
+                                id: SESSION_ID,
+                                active: true,
+                                metadata: { name: 'Named', flavor: 'claude' }
+                            }
+                        }
+                    }
+                }
+                if (url.includes(`/api/sessions/${SESSION_ID}/messages`)) {
+                    return {
+                        status: 200,
+                        data: { messages: [userMessageRow('brief')] }
+                    }
+                }
+                throw new Error(`unexpected GET ${url}`)
+            }
+        })
+
+        await spawnPeer({
+            directory: '/tmp/project',
+            message: 'brief',
+            agent: 'claude',
+            model: 'opus',
+            effort: 'high',
+            machineId: MACHINE_ID,
+            accessToken: 'tok',
+            apiUrl: 'http://hub.test',
+            http: http as never
+        })
+
+        expect(spawnedBody).toMatchObject({
+            agent: 'claude',
+            model: 'opus',
+            effort: 'high'
+        })
+    })
+
     it('passes an explicit permissionMode and does not clone yolo', async () => {
         let spawnedBody: Record<string, unknown> | undefined
         const http = createHttpMock({
@@ -851,8 +978,10 @@ describe('spawnPeer', () => {
 
         expect(spawnedBody).toMatchObject({
             directory: '/tmp/project',
+            agent: 'claude',
             sessionType: 'simple',
-            permissionMode: 'default'
+            permissionMode: 'default',
+            model: 'sonnet'
         })
         expect(spawnedBody).not.toHaveProperty('yolo')
     })

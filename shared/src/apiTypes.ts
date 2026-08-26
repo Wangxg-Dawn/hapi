@@ -9,6 +9,10 @@ import {
     SessionSchema
 } from './schemas'
 import { AgentFlavorSchema } from './modes'
+import {
+    PeerSpawnDefaultsSchema,
+    ResolvedPeerSpawnDefaultsSchema
+} from './peerSpawnDefaults'
 import type {
     DecryptedMessage,
     Machine,
@@ -60,7 +64,8 @@ export type CreateSessionResponse = z.infer<typeof CreateSessionResponseSchema>
 export const HubSettingsResponseSchema = z.object({
     sessionSummaryContract: z.boolean(),
     /** Show compact AGENT_NOTIFY_SUMMARY in chat (default off / hide). */
-    sessionSummaryInChat: z.boolean()
+    sessionSummaryInChat: z.boolean(),
+    peerSpawnDefaults: ResolvedPeerSpawnDefaultsSchema
 })
 
 export type HubSettingsResponse = z.infer<typeof HubSettingsResponseSchema>
@@ -68,10 +73,14 @@ export type HubSettingsResponse = z.infer<typeof HubSettingsResponseSchema>
 export const UpdateHubSettingsRequestSchema = z
     .object({
         sessionSummaryContract: z.boolean().optional(),
-        sessionSummaryInChat: z.boolean().optional()
+        sessionSummaryInChat: z.boolean().optional(),
+        peerSpawnDefaults: PeerSpawnDefaultsSchema.optional()
     })
     .refine(
-        (data) => data.sessionSummaryContract !== undefined || data.sessionSummaryInChat !== undefined,
+        (data) =>
+            data.sessionSummaryContract !== undefined
+            || data.sessionSummaryInChat !== undefined
+            || data.peerSpawnDefaults !== undefined,
         { message: 'At least one hub setting field is required' }
     )
 
