@@ -91,7 +91,7 @@ describe('GET/PUT /api/hub-settings', () => {
             body: JSON.stringify({
                 peerSpawnDefaults: {
                     agent: 'cursor',
-                    permissionMode: 'auto',
+                    permissionMode: 'yolo',
                     models: { cursor: 'auto' }
                 }
             })
@@ -102,7 +102,7 @@ describe('GET/PUT /api/hub-settings', () => {
             sessionSummaryInChat: false,
             peerSpawnDefaults: {
                 agent: 'cursor',
-                permissionMode: 'auto',
+                permissionMode: 'yolo',
                 models: {
                     claude: 'sonnet',
                     cursor: 'auto'
