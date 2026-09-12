@@ -7,6 +7,7 @@ import {
     savePreferredAgent,
     savePreferredLaunchSettings,
     savePreferredYoloMode,
+    seedNewSessionFromPeerSpawnDefaults,
 } from './preferences'
 
 describe('NewSession preferences', () => {
@@ -16,7 +17,7 @@ describe('NewSession preferences', () => {
 
     it('loads defaults when storage is empty', () => {
         expect(loadPreferredAgent()).toBe('claude')
-        expect(loadPreferredYoloMode()).toBe(false)
+        expect(loadPreferredYoloMode()).toBe(true)
     })
 
     it('loads saved values from storage', () => {
@@ -208,6 +209,52 @@ describe('NewSession preferences', () => {
             effort: 'auto',
             modelReasoningEffort: 'default',
             permissionMode: 'plan'
+        })
+    })
+
+    it('seeds New Session agent and permission from hub peerSpawnDefaults', () => {
+        expect(seedNewSessionFromPeerSpawnDefaults({
+            agent: 'cursor',
+            permissionMode: 'yolo',
+            models: { claude: 'sonnet', cursor: 'auto' }
+        })).toEqual({
+            agent: 'cursor',
+            yoloMode: true,
+            permissionMode: 'yolo',
+            model: 'auto'
+        })
+
+        expect(seedNewSessionFromPeerSpawnDefaults({
+            agent: 'claude',
+            permissionMode: 'bypassPermissions',
+            models: { claude: 'opus' }
+        })).toEqual({
+            agent: 'claude',
+            yoloMode: true,
+            permissionMode: 'bypassPermissions',
+            model: 'opus'
+        })
+
+        expect(seedNewSessionFromPeerSpawnDefaults({
+            agent: 'codex',
+            permissionMode: 'read-only',
+            models: {}
+        })).toEqual({
+            agent: 'codex',
+            yoloMode: false,
+            permissionMode: 'read-only',
+            model: undefined
+        })
+    })
+
+    it('uses hub permission mode when launch preferences have none', () => {
+        expect(resolvePreferredLaunchSettings('codex', null, false, 'yolo').permissionMode).toBe('yolo')
+        expect(resolvePreferredLaunchSettings('claude', null, false, 'bypassPermissions')).toEqual({
+            model: 'auto',
+            cursorSelectedBase: 'auto',
+            effort: 'auto',
+            modelReasoningEffort: 'default',
+            permissionMode: 'bypassPermissions'
         })
     })
 

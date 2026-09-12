@@ -6,8 +6,14 @@ import {
     RenameMachineRequestSchema,
     SpawnSessionRequestSchema
 } from '@hapi/protocol'
+import {
+    resolvePeerSpawnConfig,
+    type PeerSpawnDefaults,
+    type ResolvedPeerSpawnDefaults
+} from '@hapi/protocol/peerSpawnDefaults'
 import { Hono } from 'hono'
 import { RPC_TARGET_MISSING_ERROR_CODE } from '@hapi/protocol/rpcMethods'
+import { readPeerSpawnDefaults } from '../../config/peerSpawnDefaults'
 import type { SyncEngine } from '../../sync/syncEngine'
 import { RpcTargetMissingError } from '../../sync/rpcGateway'
 import type { WebAppEnv } from '../middleware/auth'
@@ -27,9 +33,33 @@ function spawnRemitField(body: unknown): string | null {
     return null
 }
 
-export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Hono<WebAppEnv> {
-    const app = new Hono<WebAppEnv>()
+export type MachinesRoutesOptions = {
+    dataDir?: string
+    /** Test seam: override hub peer spawn defaults (resolved or stored partial). */
+    getPeerSpawnDefaults?: () => PeerSpawnDefaults | ResolvedPeerSpawnDefaults | null | Promise<PeerSpawnDefaults | ResolvedPeerSpawnDefaults | null>
+}
 
+async function loadPeerSpawnDefaultsForSpawn(
+    options: MachinesRoutesOptions | undefined
+): Promise<PeerSpawnDefaults | ResolvedPeerSpawnDefaults | null> {
+    if (options?.getPeerSpawnDefaults) {
+        return await options.getPeerSpawnDefaults()
+    }
+    if (options?.dataDir) {
+        try {
+            return await readPeerSpawnDefaults(options.dataDir)
+        } catch {
+            return null
+        }
+    }
+    return null
+}
+
+export function createMachinesRoutes(
+    getSyncEngine: () => SyncEngine | null,
+    options?: MachinesRoutesOptions
+): Hono<WebAppEnv> {
+    const app = new Hono<WebAppEnv>()
     app.get('/machines', (c) => {
         const engine = getSyncEngine()
         if (!engine) {
@@ -119,18 +149,28 @@ export function createMachinesRoutes(getSyncEngine: () => SyncEngine | null): Ho
         }
         const startingMode = parsed.data.startingMode
 
+        // Apply hub peerSpawnDefaults when agent / permissionMode / model are omitted
+        // so scavenger/raw machine spawn matches Settings → General → Agents (and stock yolo).
+        const hubDefaults = await loadPeerSpawnDefaultsForSpawn(options)
+        const resolved = resolvePeerSpawnConfig({
+            ...(parsed.data.agent !== undefined ? { agent: parsed.data.agent } : {}),
+            ...(parsed.data.permissionMode !== undefined ? { permissionMode: parsed.data.permissionMode } : {}),
+            ...(parsed.data.model !== undefined ? { model: parsed.data.model } : {}),
+            ...(parsed.data.effort !== undefined ? { effort: parsed.data.effort } : {})
+        }, hubDefaults)
+
         const result = await engine.spawnSession(
             machineId,
             parsed.data.directory,
-            parsed.data.agent,
-            parsed.data.model,
+            resolved.agent,
+            resolved.model ?? parsed.data.model,
             parsed.data.modelReasoningEffort,
             parsed.data.yolo,
             parsed.data.sessionType,
             parsed.data.worktreeName,
             undefined, // resumeSessionId
-            parsed.data.effort,
-            parsed.data.permissionMode,
+            resolved.effort ?? parsed.data.effort,
+            resolved.permissionMode,
             parsed.data.serviceTier,
             undefined,
             parsed.data.collaborationMode,

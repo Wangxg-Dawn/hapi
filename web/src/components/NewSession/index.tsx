@@ -1,4 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
 import type { CodexDuplicateSessionGroup, CodexLocalSessionSummary, Machine, PiLocalSessionSummary } from '@/types/api'
 import type { CodexCollaborationMode, GrokPermissionMode, PermissionMode, CopilotAgentMode } from '@hapi/protocol'
@@ -20,6 +21,7 @@ import { useActiveSuggestions, type Suggestion } from '@/hooks/useActiveSuggesti
 import { useDirectorySuggestions } from '@/hooks/useDirectorySuggestions'
 import { useRecentPaths } from '@/hooks/useRecentPaths'
 import { useTranslation } from '@/lib/use-translation'
+import { queryKeys } from '@/lib/query-keys'
 import { getCodexModelReasoningEfforts } from '@/lib/codexModelCapabilities'
 import {
     buildNewSessionCursorModelCatalog,
@@ -67,6 +69,8 @@ import {
     savePreferredAgent,
     savePreferredLaunchSettings,
     savePreferredYoloMode,
+    seedNewSessionFromPeerSpawnDefaults,
+    isYoloStylePermissionMode,
 } from './preferences'
 import { SessionTypeSelector } from './SessionTypeSelector'
 import { PermissionField } from './PermissionField'
@@ -97,6 +101,14 @@ export function NewSession(props: {
     const { spawnSession, isPending, error: spawnError } = useSpawnSession(props.api)
     const { sessions, refetch: refetchSessions } = useSessions(props.api)
     const { getRecentPaths, addRecentPath, getLastUsedMachineId, setLastUsedMachineId } = useRecentPaths()
+    const hubSettingsQuery = useQuery({
+        queryKey: queryKeys.hubSettings,
+        queryFn: async () => props.api.getHubSettings(),
+        staleTime: 30_000,
+        retry: false
+    })
+    const hubPeerSpawnDefaults = hubSettingsQuery.data?.peerSpawnDefaults
+    const seededFromHubRef = useRef(false)
 
     const [machineId, setMachineId] = useState<string | null>(props.initialMachineId ?? null)
     const [directory, setDirectory] = useState(props.initialDirectory ?? '')
@@ -264,6 +276,38 @@ export function NewSession(props: {
         props.initialMachineId,
         machineId
     ])
+
+    // Seed agent / yolo / permission from hub peerSpawnDefaults once (Settings → General).
+    // Browse-draft restore wins; explicit form edits after seed are not overwritten.
+    useEffect(() => {
+        if (seededFromHubRef.current || restoredFromBrowseRef.current || !hubPeerSpawnDefaults) {
+            return
+        }
+        seededFromHubRef.current = true
+        const seeded = seedNewSessionFromPeerSpawnDefaults(hubPeerSpawnDefaults)
+        setAgent(seeded.agent)
+        setYoloMode(seeded.yoloMode)
+        if (usesSharedPermissionModeState(seeded.agent)) {
+            setNativePermissionMode(seeded.permissionMode)
+        } else if (seeded.agent === 'grok') {
+            if (
+                seeded.permissionMode === 'default'
+                || seeded.permissionMode === 'auto'
+                || seeded.permissionMode === 'plan'
+                || seeded.permissionMode === 'bypassPermissions'
+            ) {
+                setGrokPermissionMode(seeded.permissionMode)
+            } else if (isYoloStylePermissionMode(seeded.permissionMode)) {
+                setGrokPermissionMode('bypassPermissions')
+            }
+        }
+        if (seeded.model) {
+            setModel(seeded.model)
+            if (seeded.agent === 'cursor') {
+                setCursorSelectedBase(seeded.model)
+            }
+        }
+    }, [hubPeerSpawnDefaults])
 
     useEffect(() => {
         if (props.machines.length === 0) return
@@ -860,7 +904,8 @@ export function NewSession(props: {
         const preferred = resolvePreferredLaunchSettings(
             agent,
             loadPreferredLaunchSettings(machineId, agent),
-            legacyYoloAgent === agent
+            legacyYoloAgent === agent,
+            hubPeerSpawnDefaults?.permissionMode
         )
 
         setModel(agent === 'opencode' ? 'auto' : preferred.model)
@@ -877,7 +922,7 @@ export function NewSession(props: {
         setAgySelectedModel(
             agent === 'agy' && preferred.model !== 'auto' ? preferred.model : null
         )
-    }, [agent, legacyYoloAgent, machineId, usesSharedPermissionMode])
+    }, [agent, legacyYoloAgent, machineId, hubPeerSpawnDefaults?.permissionMode, usesSharedPermissionMode])
 
     useEffect(() => {
         if (

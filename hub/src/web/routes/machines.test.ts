@@ -154,6 +154,112 @@ describe('machines routes', () => {
         expect(capturedPermissionMode).toBe('auto')
     })
 
+    it('applies hub peerSpawnDefaults when agent and permissionMode are omitted', async () => {
+        const machine = createMachine()
+        let capturedAgent: string | undefined
+        let capturedPermissionMode: string | undefined
+        let capturedModel: string | undefined
+        const engine = {
+            getMachine: () => machine,
+            getMachineByNamespace: () => machine,
+            spawnSession: async (
+                _machineId: string,
+                _directory: string,
+                agent?: string,
+                model?: string,
+                _modelReasoningEffort?: string,
+                _yolo?: boolean,
+                _sessionType?: string,
+                _worktreeName?: string,
+                _resumeSessionId?: string,
+                _effort?: string,
+                permissionMode?: string
+            ) => {
+                capturedAgent = agent
+                capturedModel = model
+                capturedPermissionMode = permissionMode
+                return { type: 'success' as const, sessionId: 'session-1' }
+            }
+        } as Partial<SyncEngine>
+
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => {
+            c.set('namespace', 'default')
+            await next()
+        })
+        app.route('/api', createMachinesRoutes(() => engine as SyncEngine, {
+            getPeerSpawnDefaults: () => ({
+                agent: 'claude',
+                permissionMode: 'yolo',
+                models: { claude: 'sonnet[1m]' }
+            })
+        }))
+
+        const response = await app.request('/api/machines/machine-1/spawn', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ directory: '/tmp/project' })
+        })
+
+        expect(response.status).toBe(200)
+        expect(capturedAgent).toBe('claude')
+        expect(capturedPermissionMode).toBe('bypassPermissions')
+        expect(capturedModel).toBe('sonnet[1m]')
+    })
+
+    it('keeps explicit spawn overrides over hub peerSpawnDefaults', async () => {
+        const machine = createMachine()
+        let capturedAgent: string | undefined
+        let capturedPermissionMode: string | undefined
+        const engine = {
+            getMachine: () => machine,
+            getMachineByNamespace: () => machine,
+            spawnSession: async (
+                _machineId: string,
+                _directory: string,
+                agent?: string,
+                _model?: string,
+                _modelReasoningEffort?: string,
+                _yolo?: boolean,
+                _sessionType?: string,
+                _worktreeName?: string,
+                _resumeSessionId?: string,
+                _effort?: string,
+                permissionMode?: string
+            ) => {
+                capturedAgent = agent
+                capturedPermissionMode = permissionMode
+                return { type: 'success' as const, sessionId: 'session-1' }
+            }
+        } as Partial<SyncEngine>
+
+        const app = new Hono<WebAppEnv>()
+        app.use('*', async (c, next) => {
+            c.set('namespace', 'default')
+            await next()
+        })
+        app.route('/api', createMachinesRoutes(() => engine as SyncEngine, {
+            getPeerSpawnDefaults: () => ({
+                agent: 'cursor',
+                permissionMode: 'yolo'
+            })
+        }))
+
+        const response = await app.request('/api/machines/machine-1/spawn', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                directory: '/tmp/project',
+                agent: 'claude',
+                permissionMode: 'default'
+            })
+        })
+
+        expect(response.status).toBe(200)
+        expect(capturedAgent).toBe('claude')
+        expect(capturedPermissionMode).toBe('default')
+    })
+
     it('returns Codex models for an online machine', async () => {
         const machine = createMachine()
         const engine = {

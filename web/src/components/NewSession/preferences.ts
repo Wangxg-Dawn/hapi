@@ -1,9 +1,11 @@
 import {
     CREATABLE_AGENT_FLAVORS,
     getLaunchPermissionModesForFlavor,
+    getPermissionModesForFlavor,
     resolveHapiYoloPermissionMode,
     type PermissionMode
 } from '@hapi/protocol'
+import type { ResolvedPeerSpawnDefaults } from '@hapi/protocol/peerSpawnDefaults'
 import {
     CLAUDE_EFFORT_OPTIONS,
     CODEX_REASONING_EFFORT_OPTIONS,
@@ -30,6 +32,44 @@ export type PreferredLaunchSettings = {
 // (no longer creatable) falls back to 'claude'.
 const VALID_AGENTS = CREATABLE_AGENT_FLAVORS
 
+const YOLO_STYLE_PERMISSION_MODES: ReadonlySet<PermissionMode> = new Set([
+    'yolo',
+    'safe-yolo',
+    'bypassPermissions',
+    'always-proceed'
+])
+
+export function isYoloStylePermissionMode(mode: PermissionMode): boolean {
+    return YOLO_STYLE_PERMISSION_MODES.has(mode)
+}
+
+/**
+ * Map hub Settings → General peerSpawnDefaults into New Session form seeds
+ * so UI create and agent spawn share one authoritative default.
+ */
+export function seedNewSessionFromPeerSpawnDefaults(
+    defaults: ResolvedPeerSpawnDefaults
+): {
+    agent: AgentType
+    yoloMode: boolean
+    permissionMode: PermissionMode
+    model: string | undefined
+} {
+    const agent = VALID_AGENTS.includes(defaults.agent as AgentType)
+        ? defaults.agent as AgentType
+        : 'claude'
+    const permissionMode = getPermissionModesForFlavor(agent).includes(defaults.permissionMode)
+        ? defaults.permissionMode
+        : (isYoloStylePermissionMode(defaults.permissionMode) ? defaults.permissionMode : 'default')
+    const model = defaults.models[agent]?.trim() || undefined
+    return {
+        agent,
+        yoloMode: isYoloStylePermissionMode(permissionMode),
+        permissionMode,
+        model
+    }
+}
+
 export function loadPreferredAgent(): AgentType {
     try {
         const stored = localStorage.getItem(AGENT_STORAGE_KEY)
@@ -52,9 +92,14 @@ export function savePreferredAgent(agent: AgentType): void {
 
 export function loadPreferredYoloMode(): boolean {
     try {
-        return localStorage.getItem(YOLO_STORAGE_KEY) === 'true'
+        const stored = localStorage.getItem(YOLO_STORAGE_KEY)
+        // No key → stock yolo (matches hub peerSpawnDefaults / STOCK_PEER_SPAWN_DEFAULTS).
+        if (stored === null) {
+            return true
+        }
+        return stored === 'true'
     } catch {
-        return false
+        return true
     }
 }
 
@@ -130,7 +175,8 @@ function resolvePreferredOptionValue(
 export function resolvePreferredLaunchSettings(
     agent: AgentType,
     preferred: PreferredLaunchSettings | null,
-    legacyYolo = false
+    legacyYolo = false,
+    hubPermissionMode?: PermissionMode
 ): PreferredLaunchSettings {
     const preferredModel = preferred?.model ?? 'auto'
     const staticModelValues = MODEL_OPTIONS[agent].map((option) => option.value)
@@ -160,12 +206,16 @@ export function resolvePreferredLaunchSettings(
     const legacyYoloBridgeMode = preferredPermissionMode === undefined && legacyYolo && LEGACY_YOLO_BRIDGE_AGENTS.includes(agent)
         ? resolveHapiYoloPermissionMode(agent)
         : null
+    const hubMode = hubPermissionMode
+        && availablePermissionModes.includes(hubPermissionMode)
+        ? hubPermissionMode
+        : undefined
     const permissionMode = usesSharedPermissionMode
         ? preferredPermissionMode && availablePermissionModes.includes(preferredPermissionMode)
             ? preferredPermissionMode
             : legacyYoloBridgeMode && availablePermissionModes.includes(legacyYoloBridgeMode)
                 ? legacyYoloBridgeMode
-                : 'default'
+                : hubMode ?? 'default'
         : undefined
 
     return {
