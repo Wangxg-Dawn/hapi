@@ -133,4 +133,12 @@ describe('SPAWN_PEER_TOOL_DESCRIPTION', () => {
         expect(SPAWN_PEER_TOOL_DESCRIPTION.toLowerCase()).toMatch(/reject/)
         expect(SPAWN_PEER_TOOL_DESCRIPTION.toLowerCase()).not.toMatch(/strip/)
     })
+
+    it('teaches omit permissionMode = yolo default, not approval-gated default', () => {
+        expect(SPAWN_PEER_TOOL_DESCRIPTION.toLowerCase()).toMatch(/yolo/)
+        expect(SPAWN_PEER_TOOL_DESCRIPTION.toLowerCase()).toMatch(/omit/)
+        expect(SPAWN_PEER_TOOL_DESCRIPTION.toLowerCase()).not.toMatch(
+            /pass permissionmode only when the operator asked/
+        )
+    })
 })

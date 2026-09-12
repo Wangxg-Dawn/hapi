@@ -243,7 +243,10 @@ export async function runHappyMcpStdioBridge(argv: string[]): Promise<void> {
       sessionType: z.enum(['simple', 'worktree']).optional()
         .describe('simple or worktree. Default simple (use directory as cwd). worktree creates a new tree from directory.'),
       permissionMode: PermissionModeSchema.optional()
-        .describe('Operator-visible permission mode for the new session. Do not clone parent bypassPermissions.'),
+        .describe(
+          'Permission mode for the new session. Omit to use hub/stock default (yolo). '
+          + 'Pass only to tighten or when the operator names a mode — do not clone the parent session.'
+        ),
     });
 
     if (toolNames.has('spawn_peer')) {

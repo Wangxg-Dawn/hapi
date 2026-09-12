@@ -31,8 +31,9 @@ export const SPAWN_PEER_TOOL_DESCRIPTION =
     'Returns the new sessionId + name. Fails if the remit does not land (a sessionId with 0 user messages is a failed spawn). ' +
     'Do not call POST /api/machines/.../spawn with a message field - the hub rejects it. Use spawn_peer to create and deliver the remit. ' +
     'Prefer this (or `hapi spawn-peer`) over JWT+curl. Same hub/namespace as this session. ' +
-    'Does not clone the parent session\'s bypassPermissions; pass permissionMode only when the operator asked. ' +
-    'When agent/model/permissionMode are omitted, resolves from hub peerSpawnDefaults (Settings → General → Agents), then stock defaults (claude + yolo-class mode + sonnet).'
+    'Default permissionMode is yolo via hub peerSpawnDefaults / stock — omit the field to keep that default so peers work without approval prompts. ' +
+    'Pass permissionMode only to tighten (e.g. default/plan) or when the operator names a mode; do not clone the parent session\'s mode. ' +
+    'When agent/model are omitted, resolves from hub peerSpawnDefaults (Settings → General → Agents), then stock (claude + sonnet).'
 
 /** MCP `ping_peer` tool description (same citation forms as inspect_peer). */
 export const PING_PEER_TOOL_DESCRIPTION =
