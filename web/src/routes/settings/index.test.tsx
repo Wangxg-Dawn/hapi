@@ -54,7 +54,14 @@ vi.mock('@tanstack/react-router', () => ({
     useNavigate: () => navigate,
 }))
 
-vi.mock('@hapi/protocol', () => ({ PROTOCOL_VERSION: 1 }))
+vi.mock('@hapi/protocol', () => ({
+    PROTOCOL_VERSION: 1,
+    CREATABLE_AGENT_FLAVORS: ['claude', 'codex', 'cursor'] as const,
+    getPermissionModeOptionsForFlavor: () => [
+        { mode: 'bypassPermissions', label: 'bypassPermissions' },
+        { mode: 'default', label: 'default' },
+    ],
+}))
 
 vi.mock('@/hooks/useTheme', () => ({
     useAppearance: () => ({ appearance: 'system', setAppearance }),
