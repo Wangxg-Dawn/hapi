@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { UsageSummaryBucket } from '@hapi/protocol/apiTypes'
+import type { UsageSummaryBucket, UsageSpeedResponse } from '@hapi/protocol/apiTypes'
 import { SettingsPageContent, SettingsRow, SettingsSection } from '@/components/settings/SettingsPrimitives'
 import { useAppContext } from '@/lib/app-context'
 import { queryKeys } from '@/lib/query-keys'
@@ -40,6 +40,87 @@ function UsageBarList(props: { rows: UsageSummaryBucket[]; empty: string }) {
                 </div>
             ))}
         </div>
+    )
+}
+
+function formatSpeed(value: number): string {
+    return value >= 100 ? value.toFixed(0) : value.toFixed(1)
+}
+
+function UsageSpeedSection(props: { range: UsageRange }) {
+    const { api } = useAppContext()
+    const { t } = useTranslation()
+    const query = useQuery({
+        queryKey: queryKeys.usageSpeed(props.range),
+        queryFn: async () => {
+            if (!api) throw new Error('API unavailable')
+            return await api.getUsageSpeed(props.range)
+        },
+        enabled: Boolean(api),
+        staleTime: 30_000,
+        refetchOnWindowFocus: false,
+        retry: false
+    })
+
+    if (query.isLoading) {
+        return (
+            <SettingsSection title={t('settings.usage.speed.title')}>
+                <SettingsRow label={t('settings.usage.speed.loading')} />
+            </SettingsSection>
+        )
+    }
+    if (query.error || !query.data) {
+        return (
+            <SettingsSection title={t('settings.usage.speed.title')}>
+                <SettingsRow label={t('settings.usage.speed.error')} description={query.error instanceof Error ? query.error.message : undefined} />
+            </SettingsSection>
+        )
+    }
+    const data: UsageSpeedResponse = query.data
+    if (data.byModel.length === 0) {
+        return (
+            <SettingsSection title={t('settings.usage.speed.title')} description={t('settings.usage.speed.description')}>
+                <div className="px-3 py-4 text-sm text-[var(--app-hint)]">{t('settings.usage.speed.empty')}</div>
+            </SettingsSection>
+        )
+    }
+    const formatter = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
+    return (
+        <SettingsSection title={t('settings.usage.speed.title')} description={t('settings.usage.speed.description')}>
+            <div className="divide-y divide-[var(--app-divider)]">
+                {data.byModel.map((stat) => {
+                    const series = data.series.find((s) => s.model === stat.model)
+                    const points = series?.points ?? []
+                    const maxSpeed = Math.max(...points.map((p) => p.tokensPerSec), 0.1)
+                    return (
+                        <div key={stat.model} className="px-3 py-3">
+                            <div className="flex items-center justify-between gap-3 text-sm">
+                                <span className="min-w-0 truncate font-medium text-[var(--app-fg)]">{stat.model}</span>
+                                <span className="shrink-0 font-semibold text-[var(--app-link)]">{formatSpeed(stat.meanTokensPerSec)} tok/s</span>
+                            </div>
+                            <div className="mt-1 flex items-center gap-3 text-xs text-[var(--app-hint)]">
+                                <span>{t('settings.usage.speed.median', { value: formatSpeed(stat.medianTokensPerSec) })}</span>
+                                <span>{t('settings.usage.speed.p90', { value: formatSpeed(stat.p90TokensPerSec) })}</span>
+                                <span>{t('settings.usage.speed.samples', { count: stat.samples.toLocaleString() })}</span>
+                            </div>
+                            {points.length > 1 ? (
+                                <div className="mt-2 flex h-8 items-end gap-[2px]" title={t('settings.usage.speed.bucketHint')}>
+                                    {points.slice(-96).map((point) => (
+                                        <div
+                                            key={point.bucket}
+                                            className="min-w-[3px] flex-1 rounded-sm bg-[var(--app-link)]"
+                                            style={{ height: `${Math.max(6, (point.tokensPerSec / maxSpeed) * 100)}%`, opacity: 0.45 + 0.55 * (point.tokensPerSec / maxSpeed) }}
+                                            title={`${formatter.format(point.bucket)} · ${formatSpeed(point.tokensPerSec)} tok/s · ${Math.round(point.generationSeconds)}s`}
+                                        />
+                                    ))}
+                                </div>
+                            ) : null}
+                        </div>
+                    )
+                })}
+            </div>
+            <div className="px-3 pt-2 text-xs text-[var(--app-hint)]">{t('settings.usage.speed.note')}</div>
+        </SettingsSection>
     )
 }
 
@@ -123,6 +204,7 @@ export default function SettingsUsagePage() {
                             <UsageBarList rows={query.data.byModel} empty={t('settings.usage.empty')} />
                         </SettingsSection>
                     </div>
+                    <UsageSpeedSection range={range} />
                     <div className="text-xs text-[var(--app-hint)]">
                         {t('settings.usage.sessions', { count: query.data.totals.sessions })}
                     </div>

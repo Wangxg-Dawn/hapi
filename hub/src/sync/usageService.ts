@@ -214,7 +214,7 @@ function parseUsageEvent(session: StoredSession, message: StoredMessage): UsageE
     return null
 }
 
-function collectUsageEvents(store: Store, sessions: StoredSession[]): void {
+export function collectUsageEvents(store: Store, sessions: StoredSession[]): void {
     const scanStates = store.usage.getScanStates(sessions.map((session) => session.id))
     for (const session of sessions) {
         const messageEpoch = store.messages.getMessageEpoch(session.id)
@@ -290,9 +290,9 @@ function addTotals(target: Totals, inputTokens: number, outputTokens: number, ca
     target.requests += 1
 }
 
-type UsageSnapshot = [number, number, number, number]
+export type UsageSnapshot = [number, number, number, number]
 
-function cumulativeSnapshotDelta(
+export function cumulativeSnapshotDelta(
     current: UsageSnapshot,
     previous: UsageSnapshot | null,
     last: UsageSnapshot | null

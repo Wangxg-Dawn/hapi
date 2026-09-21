@@ -17,6 +17,7 @@ export function useSessionActions(
 ): {
     abortSession: () => Promise<void>
     archiveSession: () => Promise<void>
+    restartSession: () => Promise<{ ok: true; sessionId: string; resumed: boolean }>
     reopenSession: () => Promise<ReopenSessionResponse>
     switchSession: () => Promise<void>
     setPermissionMode: (mode: PermissionMode) => Promise<void>
@@ -95,6 +96,21 @@ export function useSessionActions(
             await api.archiveSession(sessionId)
         },
         onSuccess: () => void invalidateSession(),
+    })
+
+    const restartMutation = useMutation({
+        mutationFn: async () => {
+            if (!api || !sessionId) {
+                throw new Error('Session unavailable')
+            }
+            return await api.restartSession(sessionId)
+        },
+        onSuccess: (result) => {
+            void (async () => {
+                await invalidateSession()
+                markSessionActiveInCache(result.sessionId)
+            })()
+        },
     })
 
     const reopenMutation = useMutation<ReopenSessionResponse, Error, void>({
@@ -283,6 +299,7 @@ export function useSessionActions(
     return {
         abortSession: abortMutation.mutateAsync,
         archiveSession: archiveMutation.mutateAsync,
+        restartSession: restartMutation.mutateAsync,
         reopenSession: reopenMutation.mutateAsync,
         switchSession: switchMutation.mutateAsync,
         setPermissionMode: permissionMutation.mutateAsync,
@@ -299,6 +316,7 @@ export function useSessionActions(
         deleteSession: deleteMutation.mutateAsync,
         isPending: abortMutation.isPending
             || archiveMutation.isPending
+            || restartMutation.isPending
             || reopenMutation.isPending
             || switchMutation.isPending
             || permissionMutation.isPending

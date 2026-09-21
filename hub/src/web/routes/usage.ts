@@ -3,6 +3,7 @@ import type { UsageSummaryResponse } from '@hapi/protocol/apiTypes'
 import type { WebAppEnv } from '../middleware/auth'
 import type { Store } from '../../store'
 import { getUsageSummary } from '../../sync/usageService'
+import { getUsageSpeed } from '../../sync/usageSpeedService'
 
 export function createUsageRoutes(store: Store): Hono<WebAppEnv> {
     const app = new Hono<WebAppEnv>()
@@ -22,6 +23,16 @@ export function createUsageRoutes(store: Store): Hono<WebAppEnv> {
             return c.json({ error: 'Invalid timeZone' }, 400)
         }
         const response: UsageSummaryResponse = getUsageSummary(store, c.get('namespace'), range, timeZone)
+        c.header('Cache-Control', 'no-store')
+        return c.json(response)
+    })
+
+    app.get('/usage/speed', (c) => {
+        if (c.get('namespace') !== 'default') {
+            return c.json({ error: 'Usage speed is only available to the hub owner' }, 403)
+        }
+        const range = c.req.query('range')
+        const response = getUsageSpeed(store, c.get('namespace'), range)
         c.header('Cache-Control', 'no-store')
         return c.json(response)
     })
