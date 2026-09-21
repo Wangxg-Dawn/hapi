@@ -916,6 +916,8 @@ function SessionItem(props: {
     const [renameOpen, setRenameOpen] = useState(false)
     const [exportOpen, setExportOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
+    const [restartOpen, setRestartOpen] = useState(false)
+    const [restartError, setRestartError] = useState<string | null>(null)
     const [deleteOpen, setDeleteOpen] = useState(false)
     const {
         status: cursorChatStoreStatus,
@@ -942,7 +944,7 @@ function SessionItem(props: {
         ? t('session.action.reopenCursorUnverified')
         : undefined
 
-    const { archiveSession, reopenSession, renameSession, suggestSessionTitle, updateSessionSummary, deleteSession, setPinMode, isPending } = useSessionActions(
+    const { archiveSession, restartSession, reopenSession, renameSession, suggestSessionTitle, updateSessionSummary, deleteSession, setPinMode, isPending } = useSessionActions(
         api,
         s.id,
         s.metadata?.flavor ?? null
@@ -1050,6 +1052,7 @@ function SessionItem(props: {
                 onExport={() => setExportOpen(true)}
                 onMarkUnread={() => markSessionUnread(s.id, s.updatedAt)}
                 onArchive={() => setArchiveOpen(true)}
+                onRestart={s.active ? () => setRestartOpen(true) : undefined}
                 onReopen={cursorReopenDisabledReason ? undefined : handleReopen}
                 reopenDisabledReason={cursorReopenDisabledReason}
                 reopenHint={cursorReopenUnverifiedHint}
@@ -1103,6 +1106,42 @@ function SessionItem(props: {
                     onConfirm={archiveSession}
                     isPending={isPending}
                     destructive
+                    centerTitle
+                />
+            ) : null}
+
+            {restartOpen ? (
+                <ConfirmDialog
+                    isOpen={true}
+                    onClose={() => setRestartOpen(false)}
+                    title={t('dialog.restart.title')}
+                    description={t('dialog.restart.description', { name: sessionName })}
+                    confirmLabel={t('dialog.restart.confirm')}
+                    confirmingLabel={t('dialog.restart.confirming')}
+                    onConfirm={async () => {
+                        try {
+                            await restartSession()
+                            setRestartOpen(false)
+                        } catch (error) {
+                            setRestartOpen(false)
+                            setRestartError(error instanceof Error ? error.message : 'Restart failed')
+                        }
+                    }}
+                    isPending={isPending}
+                    centerTitle
+                />
+            ) : null}
+
+            {restartError ? (
+                <ConfirmDialog
+                    isOpen={true}
+                    onClose={() => setRestartError(null)}
+                    title={t('dialog.restart.errorTitle')}
+                    description={restartError}
+                    confirmLabel={t('dialog.reopen.dismiss')}
+                    confirmingLabel={t('dialog.reopen.dismiss')}
+                    onConfirm={async () => setRestartError(null)}
+                    isPending={false}
                     centerTitle
                 />
             ) : null}
