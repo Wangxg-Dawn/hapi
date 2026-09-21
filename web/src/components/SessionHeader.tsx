@@ -224,11 +224,13 @@ export function SessionHeader(props: {
     const [isSyncingCodex, setIsSyncingCodex] = useState(false)
     const [isSyncingPi, setIsSyncingPi] = useState(false)
 
-    const { archiveSession, reopenSession, renameSession, suggestSessionTitle, updateSessionSummary, setPinMode, deleteSession, isPending } = useSessionActions(
+    const { archiveSession, restartSession, reopenSession, renameSession, suggestSessionTitle, updateSessionSummary, setPinMode, deleteSession, isPending } = useSessionActions(
         api,
         session.id,
         session.metadata?.flavor ?? null
     )
+    const [restartOpen, setRestartOpen] = useState(false)
+    const [restartError, setRestartError] = useState<string | null>(null)
     const [reopenError, setReopenError] = useState<string | null>(null)
 
     const handleSetPinMode = async (mode: 'none' | 'project' | 'global') => {
@@ -526,6 +528,7 @@ export function SessionHeader(props: {
                 onSyncCodex={api && codexSessionId ? handleSyncCodex : undefined}
                 onSyncPi={api && piSessionId && !session.active ? handleSyncPi : undefined}
                 onArchive={() => setArchiveOpen(true)}
+                onRestart={session.active ? () => setRestartOpen(true) : undefined}
                 onReopen={props.canReopen === false ? undefined : handleReopen}
                 reopenDisabledReason={props.reopenDisabledReason}
                 reopenHint={props.reopenHint}
@@ -577,6 +580,40 @@ export function SessionHeader(props: {
                 destructive
                 centerTitle
             />
+
+            <ConfirmDialog
+                isOpen={restartOpen}
+                onClose={() => setRestartOpen(false)}
+                title={t('dialog.restart.title')}
+                description={t('dialog.restart.description', { name: title })}
+                confirmLabel={t('dialog.restart.confirm')}
+                confirmingLabel={t('dialog.restart.confirming')}
+                onConfirm={async () => {
+                    try {
+                        await restartSession()
+                        setRestartOpen(false)
+                    } catch (error) {
+                        setRestartOpen(false)
+                        setRestartError(error instanceof Error ? error.message : 'Restart failed')
+                    }
+                }}
+                isPending={isPending}
+                centerTitle
+            />
+
+            {restartError ? (
+                <ConfirmDialog
+                    isOpen={true}
+                    onClose={() => setRestartError(null)}
+                    title={t('dialog.restart.errorTitle')}
+                    description={restartError}
+                    confirmLabel={t('dialog.reopen.dismiss')}
+                    confirmingLabel={t('dialog.reopen.dismiss')}
+                    onConfirm={async () => setRestartError(null)}
+                    isPending={false}
+                    centerTitle
+                />
+            ) : null}
 
             <ConfirmDialog
                 isOpen={deleteOpen}

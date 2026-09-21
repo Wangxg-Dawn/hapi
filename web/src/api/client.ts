@@ -619,6 +619,13 @@ export class ApiClient {
         })
     }
 
+    async restartSession(sessionId: string): Promise<{ ok: true; sessionId: string; resumed: boolean }> {
+        return await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/restart`, {
+            method: 'POST',
+            body: JSON.stringify({})
+        })
+    }
+
     async reopenSession(sessionId: string): Promise<ReopenSessionResponse> {
         return await this.request<ReopenSessionResponse>(
             `/api/sessions/${encodeURIComponent(sessionId)}/reopen`,
