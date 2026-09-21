@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdtempSync, rmSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const ioMock = vi.hoisted(() => vi.fn())
 const listOpencodeModelsForCwdMock = vi.hoisted(() => vi.fn())
+const listOpencodeModelVariantsMock = vi.hoisted(() => vi.fn())
 const listGrokModelsForCwdMock = vi.hoisted(() => vi.fn())
 const listCopilotModelsForCwdMock = vi.hoisted(() => vi.fn())
 const inspectCursorChatStoreMock = vi.hoisted(() => vi.fn())
@@ -19,6 +20,10 @@ vi.mock('@/api/auth', () => ({
 
 vi.mock('../modules/common/opencodeModels', () => ({
     listOpencodeModelsForCwd: listOpencodeModelsForCwdMock
+}))
+
+vi.mock('../modules/common/opencodeModelVariants', () => ({
+    listOpencodeModelVariants: listOpencodeModelVariantsMock
 }))
 
 vi.mock('../modules/common/grokModels', () => ({
@@ -70,6 +75,15 @@ async function callListOpencodeModels(client: ApiMachineClient, machineId: strin
     const manager = (client as unknown as { rpcHandlerManager: { handleRequest: (req: { method: string; params: string }) => Promise<string> } }).rpcHandlerManager
     const raw = await manager.handleRequest({
         method: `${machineId}:listOpencodeModelsForCwd`,
+        params: JSON.stringify({ cwd })
+    })
+    return JSON.parse(raw) as unknown
+}
+
+async function callListOpencodeModelVariants(client: ApiMachineClient, machineId: string, cwd: string): Promise<unknown> {
+    const manager = (client as unknown as { rpcHandlerManager: { handleRequest: (req: { method: string; params: string }) => Promise<string> } }).rpcHandlerManager
+    const raw = await manager.handleRequest({
+        method: `${machineId}:listOpencodeModelVariants`,
         params: JSON.stringify({ cwd })
     })
     return JSON.parse(raw) as unknown
@@ -306,6 +320,56 @@ describe('ApiMachineClient listOpencodeModelsForCwd handler', () => {
             expect(listOpencodeModelsForCwdMock).toHaveBeenCalledWith(realpathSync.native(secondWorkspaceRoot))
         } finally {
             rmSync(secondWorkspaceRoot, { recursive: true, force: true })
+            client.shutdown()
+        }
+    })
+})
+
+describe('ApiMachineClient listOpencodeModelVariants handler', () => {
+    let workspaceRoot: string
+
+    beforeEach(() => {
+        ioMock.mockReset()
+        listOpencodeModelVariantsMock.mockReset()
+        workspaceRoot = mkdtempSync(join(tmpdir(), 'hapi-opencode-variants-ws-'))
+    })
+
+    afterEach(() => {
+        rmSync(workspaceRoot, { recursive: true, force: true })
+    })
+
+    it('rejects cwd outside workspace roots before running the variant probe', async () => {
+        const machine = makeMachine('opencode-variants-machine-1')
+        const client = new ApiMachineClient('cli-token', machine, [workspaceRoot])
+        const outsideCwd = mkdtempSync(join(tmpdir(), 'hapi-opencode-variants-outside-'))
+
+        try {
+            expect(await callListOpencodeModelVariants(client, machine.id, outsideCwd)).toEqual({
+                success: false,
+                error: 'Path is outside workspace roots'
+            })
+            expect(listOpencodeModelVariantsMock).not.toHaveBeenCalled()
+        } finally {
+            rmSync(outsideCwd, { recursive: true, force: true })
+            client.shutdown()
+        }
+    })
+
+    it('rejects a workspace symlink that escapes the configured roots', async () => {
+        const machine = makeMachine('opencode-variants-machine-2')
+        const client = new ApiMachineClient('cli-token', machine, [workspaceRoot])
+        const outsideCwd = mkdtempSync(join(tmpdir(), 'hapi-opencode-variants-symlink-outside-'))
+        const escape = join(workspaceRoot, 'escape')
+        symlinkSync(outsideCwd, escape, 'dir')
+
+        try {
+            expect(await callListOpencodeModelVariants(client, machine.id, escape)).toEqual({
+                success: false,
+                error: 'Path is outside workspace roots'
+            })
+            expect(listOpencodeModelVariantsMock).not.toHaveBeenCalled()
+        } finally {
+            rmSync(outsideCwd, { recursive: true, force: true })
             client.shutdown()
         }
     })
@@ -700,6 +764,46 @@ describe('ApiMachineClient list-directory handler', () => {
         const entries = (result as { success: boolean; entries?: { name: string }[] }).entries ?? []
         return entries.map((entry) => entry.name).sort()
     }
+
+    it('browses outside the home directory when no workspace roots are configured', async () => {
+        const machine = makeMachine('machine-ls-unrestricted')
+        const client = new ApiMachineClient('cli-token', machine)
+        try {
+            const result = await callListDirectory(client, machine.id, { path: workspaceRoot })
+            expect((result as { success: boolean }).success).toBe(true)
+            expect(entryNames(result)).toEqual(['plain.txt', 'visible-dir'])
+        } finally {
+            client.shutdown()
+        }
+    })
+
+    it('lists in-root directory links and rejects links escaping explicit workspace roots', async () => {
+        const outside = mkdtempSync(join(tmpdir(), 'hapi-machine-ls-outside-'))
+        mkdirSync(join(workspaceRoot, 'visible-dir', '.git'))
+        symlinkSync(join(workspaceRoot, 'visible-dir'), join(workspaceRoot, 'linked-repo'), 'dir')
+        symlinkSync(outside, join(workspaceRoot, 'escape'), 'dir')
+        const machine = makeMachine('machine-ls-links')
+        const client = new ApiMachineClient('cli-token', machine, [workspaceRoot])
+        try {
+            const result = await callListDirectory(client, machine.id, { path: workspaceRoot })
+            expect(result).toMatchObject({
+                success: true,
+                entries: expect.arrayContaining([
+                    expect.objectContaining({ name: 'linked-repo', type: 'directory', isGitRepo: true }),
+                ]),
+            })
+            expect(entryNames(result)).not.toContain('escape')
+            expect(await callListDirectory(client, machine.id, { path: join(workspaceRoot, 'escape') }))
+                .toEqual({ success: false, error: 'Path is outside workspace roots' })
+            expect(await callListDirectory(client, machine.id, { path: join(workspaceRoot, '..') }))
+                .toEqual({ success: false, error: 'Path is outside workspace roots' })
+            expect(await callListDirectory(client, machine.id, { path: join(workspaceRoot, 'linked-repo') }))
+                .toMatchObject({ success: true })
+        } finally {
+            client.shutdown()
+            rmSync(outside, { recursive: true, force: true })
+        }
+    })
 
     it('filters dot-prefixed entries by default', async () => {
         const machine = makeMachine('machine-ls-1')
