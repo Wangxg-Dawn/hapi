@@ -47,77 +47,135 @@ function formatSpeed(value: number): string {
     return value >= 100 ? value.toFixed(0) : value.toFixed(1)
 }
 
-function DailyProfileChart(props: { profile: { history: Array<{ hour: number; tokensPerSec: number; outputTokens: number }>; today: Array<{ hour: number; tokensPerSec: number; outputTokens: number }>; todayKey: string } }) {
+function DailyProfileChart(props: {
+    profile: {
+        history: Array<{ hour: number; tokensPerSec: number; outputTokens: number }>
+        today: Array<{ hour: number; tokensPerSec: number; outputTokens: number }>
+    }
+}) {
     const { t } = useTranslation()
     const historyBySlot = new Map(props.profile.history.map((p) => [p.hour, p]))
     const todayBySlot = new Map(props.profile.today.map((p) => [p.hour, p]))
-    const maxSpeed = Math.max(
+    const allValues = [
         ...Array.from(historyBySlot.values()).map((p) => p.tokensPerSec),
-        ...Array.from(todayBySlot.values()).map((p) => p.tokensPerSec),
-        0.1
-    )
+        ...Array.from(todayBySlot.values()).map((p) => p.tokensPerSec)
+    ]
+    const maxSpeed = Math.max(...allValues, 1)
+    const SLOTS = 96
+    const CHART_H = 56 // svg user units; keep in sync with h-14 below
+    const slotLabel = (slot: number) =>
+        `${String(Math.floor(slot / 4)).padStart(2, '0')}:${String((slot % 4) * 15).padStart(2, '0')}`
+    const x = (slot: number) => (slot + 0.5) * (100 / SLOTS)
+    const yFor = (v: number) => Math.max(1, (v / maxSpeed) * CHART_H)
+
+    // Break today's polyline at gaps so we never draw a long straight line
+    // across unused hours.
+    const presentSlots = Array.from(todayBySlot.keys()).sort((a, b) => a - b)
+    const runs: number[][] = []
+    for (const slot of presentSlots) {
+        const last = runs[runs.length - 1]
+        if (last && slot - last[last.length - 1] <= 2) last.push(slot)
+        else runs.push([slot])
+    }
+
     const now = new Date()
-    const currentSlot = now.getHours() * 4 + Math.floor(now.getMinutes() / 15)
-    const slotLabel = (slot: number) => `${String(Math.floor(slot / 4)).padStart(2, '0')}:${String((slot % 4) * 15).padStart(2, '0')}`
-    const slots = Array.from({ length: 96 }, (_, slot) => slot)
-    // polyline path for today's curve (values in 0..1 of chart height)
-    const chartH = 48
-    const todayPoints = slots
-        .map((slot) => {
-            const today = todayBySlot.get(slot)
-            if (!today) return null
-            return { slot, value: Math.max(3, (today.tokensPerSec / maxSpeed) * chartH) }
-        })
-        .filter((p): p is { slot: number; value: number } => p !== null)
-    const pathD = todayPoints.length > 1
-        ? todayPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${(p.slot + 0.5) * (100 / 96)} ${chartH - p.value}`).join(' ')
-        : ''
+    const currentX = x(now.getHours() * 4 + Math.floor(now.getMinutes() / 15))
+
     return (
-        <div className="mt-2">
-            <div className="relative h-12" role="img" aria-label={t('settings.usage.speed.profileHint')}>
-                <div className="absolute inset-0 flex items-end gap-[1px]">
-                    {slots.map((slot) => {
-                        const hist = historyBySlot.get(slot)
-                        return (
-                            <div
-                                key={slot}
-                                className="min-w-[2px] flex-1 h-full flex items-end"
-                                title={t('settings.usage.speed.profileTooltip', {
-                                    time: slotLabel(slot),
-                                    hist: hist ? formatSpeed(hist.tokensPerSec) : '—',
-                                    today: todayBySlot.has(slot) ? formatSpeed(todayBySlot.get(slot)!.tokensPerSec) : '—'
-                                })}
-                            >
+        <div className="mt-3">
+            <div className="flex items-stretch gap-2">
+                {/* chart */}
+                <div className="relative h-14 flex-1">
+                    {/* grid: baseline + 6-hour ticks */}
+                    {[0, 24, 48, 72].map((slot) => (
+                        <div key={`grid-${slot}`} className="absolute top-0 bottom-0 w-px bg-[var(--app-divider)] opacity-40" style={{ left: `${x(slot)}%` }} />
+                    ))}
+                    <div className="absolute inset-x-0 bottom-0 h-px bg-[var(--app-divider)]" />
+                    {/* history bars (gray) */}
+                    <div className="absolute inset-0 flex items-end gap-[1px]">
+                        {Array.from({ length: SLOTS }, (_, slot) => {
+                            const hist = historyBySlot.get(slot)
+                            const h = hist ? (hist.tokensPerSec / maxSpeed) * 100 : 0
+                            return (
                                 <div
-                                    className="w-full rounded-sm bg-[var(--app-hint)]"
-                                    style={{ height: `${hist ? Math.max(3, (hist.tokensPerSec / maxSpeed) * 100) : 1}%`, opacity: hist ? 0.4 : 0.1 }}
+                                    key={slot}
+                                    className="min-w-[2px] flex-1"
+                                    style={{ height: `${h}%`, backgroundColor: 'var(--app-hint)', opacity: hist ? 0.35 : 0, borderRadius: '1px 1px 0 0' }}
                                 />
-                            </div>
-                        )
-                    })}
-                </div>
-                {pathD ? (
-                    <svg
-                        viewBox={`0 0 100 ${chartH}`}
-                        preserveAspectRatio="none"
-                        className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
-                    >
-                        <path d={pathD} fill="none" stroke="var(--app-link)" strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-                        {todayPoints.map((p) => (
-                            <circle key={p.slot} cx={(p.slot + 0.5) * (100 / 96)} cy={chartH - p.value} r="1.6" fill="var(--app-link)" vectorEffect="non-scaling-stroke" />
+                            )
+                        })}
+                    </div>
+                    {/* today line (colored), broken at gaps */}
+                    <svg viewBox={`0 0 100 ${CHART_H}`} preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
+                        {runs.map((run, i) =>
+                            run.length > 1 ? (
+                                <polyline
+                                    key={`run-${i}`}
+                                    points={run.map((slot) => `${x(slot)},${CHART_H - yFor(todayBySlot.get(slot)!.tokensPerSec)}`).join(' ')}
+                                    fill="none"
+                                    stroke="var(--app-link)"
+                                    strokeWidth="1.6"
+                                    strokeLinejoin="round"
+                                    strokeLinecap="round"
+                                    vectorEffect="non-scaling-stroke"
+                                />
+                            ) : null
+                        )}
+                        {runs.flat().map((slot) => (
+                            <circle
+                                key={`dot-${slot}`}
+                                cx={x(slot)}
+                                cy={CHART_H - yFor(todayBySlot.get(slot)!.tokensPerSec)}
+                                r="1.7"
+                                fill="var(--app-link)"
+                                vectorEffect="non-scaling-stroke"
+                            />
                         ))}
                     </svg>
-                ) : null}
-                <div className="absolute bottom-0" style={{ left: `${((currentSlot + 0.5) * (100 / 96))}%` }}>
-                    <div className="h-12 w-0 border-l-2 border-[var(--app-link)] opacity-40" />
+                    {/* current time marker */}
+                    <div className="absolute top-0 bottom-0 w-px bg-[var(--app-link)] opacity-30" style={{ left: `${currentX}%` }} />
+                    {/* hover targets */}
+                    <div className="absolute inset-0 flex gap-[1px]">
+                        {Array.from({ length: SLOTS }, (_, slot) => {
+                            const hist = historyBySlot.get(slot)
+                            const today = todayBySlot.get(slot)
+                            return (
+                                <div
+                                    key={`hit-${slot}`}
+                                    className="min-w-[2px] flex-1"
+                                    title={t('settings.usage.speed.profileTooltip', {
+                                        time: slotLabel(slot),
+                                        hist: hist ? formatSpeed(hist.tokensPerSec) : '0',
+                                        today: today ? formatSpeed(today.tokensPerSec) : '0'
+                                    })}
+                                />
+                            )
+                        })}
+                    </div>
+                </div>
+                {/* y axis labels */}
+                <div className="flex w-12 flex-col justify-between text-right text-[10px] leading-none text-[var(--app-hint)]">
+                    <span>{formatSpeed(maxSpeed)}</span>
+                    <span>0</span>
                 </div>
             </div>
-            <div className="mt-1 flex items-center justify-between text-[10px] text-[var(--app-hint)]">
-                <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:45</span>
+            {/* x axis labels */}
+            <div className="mt-1 flex justify-between pl-0 pr-14 text-[10px] text-[var(--app-hint)]">
+                <span>00:00</span>
+                <span>06:00</span>
+                <span>12:00</span>
+                <span>18:00</span>
+                <span>24:00</span>
             </div>
             <div className="mt-1 flex items-center gap-3 text-[10px] text-[var(--app-hint)]">
-                <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-[var(--app-hint)] opacity-40" />{t('settings.usage.speed.legendHistory')}</span>
-                <span className="inline-flex items-center gap-1"><span className="inline-block h-0 w-3 border-t-2 border-[var(--app-link)]" />{t('settings.usage.speed.legendToday')}</span>
+                <span className="inline-flex items-center gap-1">
+                    <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[var(--app-hint)] opacity-35" />
+                    {t('settings.usage.speed.legendHistory')}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                    <span className="inline-block h-0 w-3 border-t-2 border-[var(--app-link)]" />
+                    {t('settings.usage.speed.legendToday')}
+                </span>
             </div>
         </div>
     )
@@ -161,13 +219,11 @@ function UsageSpeedSection(props: { range: UsageRange }) {
         )
     }
     const formatter = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
+    void formatter
     return (
         <SettingsSection title={t('settings.usage.speed.title')} description={t('settings.usage.speed.description')}>
             <div className="divide-y divide-[var(--app-divider)]">
                 {data.byModel.map((stat) => {
-                    const series = data.series.find((s) => s.model === stat.model)
-                    const points = series?.points ?? []
-                    const maxSpeed = Math.max(...points.map((p) => p.tokensPerSec), 0.1)
                     const profile = data.dailyProfiles?.find((p) => p.model === stat.model)
                     return (
                         <div key={stat.model} className="px-3 py-3">
@@ -183,19 +239,7 @@ function UsageSpeedSection(props: { range: UsageRange }) {
                             {profile && (profile.history.length > 0 || profile.today.length > 0) ? (
                                 <DailyProfileChart profile={profile} />
                             ) : null}
-                            {points.length > 1 ? (
-                                <div className="mt-2 flex h-8 items-end gap-[2px]" title={t('settings.usage.speed.bucketHint')}>
-                                    {points.slice(-96).map((point) => (
-                                        <div
-                                            key={point.bucket}
-                                            className="min-w-[3px] flex-1 rounded-sm bg-[var(--app-link)]"
-                                            style={{ height: `${Math.max(6, (point.tokensPerSec / maxSpeed) * 100)}%`, opacity: 0.45 + 0.55 * (point.tokensPerSec / maxSpeed) }}
-                                            title={`${formatter.format(point.bucket)} · ${formatSpeed(point.tokensPerSec)} tok/s · ${Math.round(point.generationSeconds)}s`}
-                                        />
-                                    ))}
-                                </div>
-                            ) : null}
-                        </div>
+                                                    </div>
                     )
                 })}
             </div>

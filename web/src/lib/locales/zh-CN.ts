@@ -822,7 +822,7 @@ export default {
   'settings.usage.bucketDetails': '{requests} 次请求 · 输入 {input} · 输出 {output}',
   'settings.usage.sessions': '{count} 个会话有用量记录',
   'settings.usage.speed.title': 'Token 速度',
-  'settings.usage.speed.description': '各模型连续生成段的输出速度（tok/s，按 15 分钟粒度）;工具执行与等待时间已剔除。',
+  'settings.usage.speed.description': '各模型输出速度（tok/s）：上方数字为该模型整体平均，下方按一天 24 小时（15 分钟一格）对比——灰柱＝历史均值，紫线＝今天；工具执行与等待时间已剔除。',
   'settings.usage.speed.loading': '正在加载 Token 速度…',
   'settings.usage.speed.error': '无法加载 Token 速度',
   'settings.usage.speed.empty': '此范围内没有可计算的生成速度样本。',

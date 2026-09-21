@@ -824,7 +824,7 @@ export default {
   'settings.usage.bucketDetails': '{requests} requests · {input} in · {output} out',
   'settings.usage.sessions': '{count} sessions with usage',
   'settings.usage.speed.title': 'Token speed',
-  'settings.usage.speed.description': 'Output tokens/sec per model over continuous generation spans (15-minute buckets); tool execution and idle waiting are excluded.',
+  'settings.usage.speed.description': 'Output speed per model (tok/s). The number on the right is the overall mean; the chart compares one day in 15-minute slots — gray bars = history, purple line = today. Tool execution and idle waiting are excluded.',
   'settings.usage.speed.loading': 'Loading token speed…',
   'settings.usage.speed.error': 'Failed to load token speed',
   'settings.usage.speed.empty': 'No speed samples in this range.',
