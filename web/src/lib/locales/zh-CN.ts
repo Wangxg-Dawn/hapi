@@ -828,7 +828,7 @@ export default {
   'settings.usage.speed.empty': '此范围内没有可计算的生成速度样本。',
   'settings.usage.speed.median': '中位 {value} tok/s',
   'settings.usage.speed.p90': 'P90 {value} tok/s',
-  'settings.usage.speed.samples': '{count} 个生成段',
+  'settings.usage.speed.samples': '{count} 个增量样本',
   'settings.usage.speed.bucketHint': '每列 = 15 分钟窗口的平均输出速度',
   'settings.usage.speed.note': '速度 = 每条增量的输出 token ÷ 距上一条增量的时间间隔；间隔 <0.5 秒（重复上报）或 >2 分钟（工具执行/等待）不计入。中位数与 P90 为逐增量样本分位。',
   'settings.usage.speed.profileHint': '每小时平均输出速度：历史完整天 vs 今天',

@@ -830,7 +830,7 @@ export default {
   'settings.usage.speed.empty': 'No speed samples in this range.',
   'settings.usage.speed.median': 'Median {value} tok/s',
   'settings.usage.speed.p90': 'P90 {value} tok/s',
-  'settings.usage.speed.samples': '{count} spans',
+  'settings.usage.speed.samples': '{count} samples',
   'settings.usage.speed.bucketHint': 'Each bar = average output speed in a 15-minute window',
   'settings.usage.speed.note': 'Speed = output tokens of a delta divided by the time since the previous delta; intervals under 0.5s (duplicate reports) or over 2 minutes (tool execution / idle waiting) are excluded. Median and P90 are per-delta percentiles.',
   'settings.usage.speed.profileHint': 'Average output speed per hour of day: historical full days vs today',
