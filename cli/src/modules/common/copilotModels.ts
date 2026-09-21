@@ -93,7 +93,8 @@ async function listModelsViaSdkHeadless(): Promise<CopilotModelSummary[]> {
     const command = process.env.COPILOT_CLI_PATH ?? 'copilot';
     const child = spawn(command, ['--headless', '--stdio', '--no-auto-update'], {
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: process.env
+        env: process.env,
+        windowsHide: process.platform === 'win32'
     });
 
     if (!child.stdin || !child.stdout) {

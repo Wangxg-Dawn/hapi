@@ -122,6 +122,7 @@ export class AgyHeadlessDriver extends RemoteLauncherBase {
                 cwd,
                 stdio: ['pipe', 'pipe', 'pipe'],
                 env: buildAgySpawnEnv(),
+                windowsHide: process.platform === 'win32'
             }) as ChildProcessWithoutNullStreams;
             return child;
         });

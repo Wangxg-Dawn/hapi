@@ -39,7 +39,12 @@ export class PiTransport extends JsonLineParser {
         this.process = spawn(this.options.command, this.options.args, {
             cwd: this.options.cwd,
             stdio: ['pipe', 'pipe', 'pipe'],
-            env: this.options.env
+            env: this.options.env,
+            // our-main: the runner has no console on Windows (started hidden),
+            // so a child console app would allocate a fresh console window —
+            // the "black window" seen when a pi session restarts. Codex/ACP
+            // transports already pass windowsHide; pi was missing it.
+            windowsHide: process.platform === 'win32'
         }) as ChildProcessWithoutNullStreams;
 
         this.process.stdout.setEncoding('utf8');
