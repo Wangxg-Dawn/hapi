@@ -1005,13 +1005,14 @@ export type UsageSpeedSeries = {
     points: Array<UsageSpeedBucketPoint>
 }
 
-// Hour-of-day profile: historical full days (excluding today) vs today.
+// Hour-of-day profile: historical full days (excluding today) vs today,
+// resolved on a 15-minute grid (96 slots per day).
 export type UsageSpeedHourPoint = {
-    /** hour 0-23 (in the requested timeZone) */
+    /** slot index 0-95 (00:00-00:14=0, 00:15-00:29=1, ...) in the requested timeZone */
     hour: number
-    /** weighted mean output tokens/sec across historical full days */
+    /** weighted mean output tokens/sec across historical full days for this slot */
     tokensPerSec: number
-    /** total output tokens behind this hour bucket (historical) */
+    /** total output tokens behind this slot bucket (historical) */
     outputTokens: number
 }
 

@@ -834,7 +834,7 @@ export default {
   'settings.usage.speed.bucketHint': 'Each bar = average output speed in a 15-minute window',
   'settings.usage.speed.note': 'Speed = output tokens / generation time within consecutive spans; gaps over 2 minutes are treated as tool execution or idle waiting and excluded.',
   'settings.usage.speed.profileHint': 'Average output speed per hour of day: historical full days vs today',
-  'settings.usage.speed.profileTooltip': '{hour}:00 | history {hist} tok/s | today {today} tok/s',
+  'settings.usage.speed.profileTooltip': '{time} | history {hist} tok/s | today {today} tok/s',
   'settings.usage.speed.legendHistory': 'History (full days in range)',
   'settings.usage.speed.legendToday': 'Today',
   'settings.general.description': 'Language, companion pairing, and general application preferences.',

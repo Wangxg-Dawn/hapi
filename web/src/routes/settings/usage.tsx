@@ -49,48 +49,50 @@ function formatSpeed(value: number): string {
 
 function DailyProfileChart(props: { profile: { history: Array<{ hour: number; tokensPerSec: number; outputTokens: number }>; today: Array<{ hour: number; tokensPerSec: number; outputTokens: number }>; todayKey: string } }) {
     const { t } = useTranslation()
-    const historyByHour = new Map(props.profile.history.map((p) => [p.hour, p]))
-    const todayByHour = new Map(props.profile.today.map((p) => [p.hour, p]))
+    const historyBySlot = new Map(props.profile.history.map((p) => [p.hour, p]))
+    const todayBySlot = new Map(props.profile.today.map((p) => [p.hour, p]))
     const maxSpeed = Math.max(
-        ...Array.from(historyByHour.values()).map((p) => p.tokensPerSec),
-        ...Array.from(todayByHour.values()).map((p) => p.tokensPerSec),
+        ...Array.from(historyBySlot.values()).map((p) => p.tokensPerSec),
+        ...Array.from(todayBySlot.values()).map((p) => p.tokensPerSec),
         0.1
     )
-    const currentHour = new Date().getHours()
-    const hours = Array.from({ length: 24 }, (_, hour) => hour)
+    const now = new Date()
+    const currentSlot = now.getHours() * 4 + Math.floor(now.getMinutes() / 15)
+    const slotLabel = (slot: number) => `${String(Math.floor(slot / 4)).padStart(2, '0')}:${String((slot % 4) * 15).padStart(2, '0')}`
+    const slots = Array.from({ length: 96 }, (_, slot) => slot)
     return (
         <div className="mt-2">
-            <div className="flex items-end gap-[2px] h-12" role="img" aria-label={t('settings.usage.speed.profileHint')}>
-                {hours.map((hour) => {
-                    const hist = historyByHour.get(hour)
-                    const today = todayByHour.get(hour)
+            <div className="flex items-end gap-[1px] h-12" role="img" aria-label={t('settings.usage.speed.profileHint')}>
+                {slots.map((slot) => {
+                    const hist = historyBySlot.get(slot)
+                    const today = todayBySlot.get(slot)
                     return (
                         <div
-                            key={hour}
-                            className="relative min-w-[8px] flex-1 h-full flex items-end"
+                            key={slot}
+                            className="relative min-w-[2px] flex-1 h-full flex items-end"
                             title={t('settings.usage.speed.profileTooltip', {
-                                hour: String(hour).padStart(2, '0'),
+                                time: slotLabel(slot),
                                 hist: hist ? formatSpeed(hist.tokensPerSec) : '—',
                                 today: today ? formatSpeed(today.tokensPerSec) : '—'
                             })}
                         >
                             <div
                                 className="w-full rounded-sm bg-[var(--app-hint)]"
-                                style={{ height: `${hist ? Math.max(4, (hist.tokensPerSec / maxSpeed) * 100) : 2}%`, opacity: hist ? 0.35 : 0.15 }}
+                                style={{ height: `${hist ? Math.max(4, (hist.tokensPerSec / maxSpeed) * 100) : 2}%`, opacity: hist ? 0.35 : 0.12 }}
                             />
                             {today ? (
                                 <div
                                     className="absolute left-1/2 -translate-x-1/2 rounded-full bg-[var(--app-link)]"
                                     style={{
                                         bottom: `${Math.max(4, (today.tokensPerSec / maxSpeed) * 100)}%`,
-                                        width: '7px',
-                                        height: '7px',
+                                        width: '5px',
+                                        height: '5px',
                                         boxShadow: '0 0 0 2px var(--app-bg)',
                                         zIndex: 2
                                     }}
                                 />
                             ) : null}
-                            {hour === currentHour ? (
+                            {slot === currentSlot ? (
                                 <div className="absolute bottom-0 left-0 right-0 h-full w-full border-b-2 border-[var(--app-link)] opacity-60" />
                             ) : null}
                         </div>
@@ -98,11 +100,11 @@ function DailyProfileChart(props: { profile: { history: Array<{ hour: number; to
                 })}
             </div>
             <div className="mt-1 flex items-center justify-between text-[10px] text-[var(--app-hint)]">
-                <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
+                <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:45</span>
             </div>
             <div className="mt-1 flex items-center gap-3 text-[10px] text-[var(--app-hint)]">
                 <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-[var(--app-hint)] opacity-40" />{t('settings.usage.speed.legendHistory')}</span>
-                <span className="inline-flex items-center gap-1"><span className="inline-block h-[7px] w-[7px] rounded-full bg-[var(--app-link)]" />{t('settings.usage.speed.legendToday')}</span>
+                <span className="inline-flex items-center gap-1"><span className="inline-block h-[5px] w-[5px] rounded-full bg-[var(--app-link)]" />{t('settings.usage.speed.legendToday')}</span>
             </div>
         </div>
     )

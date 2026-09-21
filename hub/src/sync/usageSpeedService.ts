@@ -170,13 +170,18 @@ function createHourFormatter(timeZone: string): Intl.DateTimeFormat {
     })
 }
 
-/** Returns [dayKey, hour] for a timestamp in the given timeZone. */
-function dayHourKey(timestamp: number, formatter: Intl.DateTimeFormat): { day: string; hour: number } {
+const PROFILE_SLOT_MS = 15 * 60 * 1000
+const PROFILE_SLOTS = 96
+
+/** Returns [dayKey, slot 0-95] for a timestamp in the given timeZone. */
+function daySlotKey(timestamp: number, formatter: Intl.DateTimeFormat): { day: string; slot: number } {
     const parts = formatter.formatToParts(new Date(timestamp))
     const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
     const hourRaw = get('hour')
     const hour = Number.parseInt(hourRaw === '24' ? '0' : hourRaw, 10)
-    return { day: `${get('year')}-${get('month')}-${get('day')}`, hour: Number.isFinite(hour) ? hour : 0 }
+    const minute = Number.parseInt(get('minute'), 10) || 0
+    const slot = (Number.isFinite(hour) ? hour : 0) * 4 + Math.floor(minute / 15)
+    return { day: `${get('year')}-${get('month')}-${get('day')}`, slot: Math.min(PROFILE_SLOTS - 1, Math.max(0, slot)) }
 }
 
 function buildDailyProfiles(
@@ -184,30 +189,30 @@ function buildDailyProfiles(
     timeZone: string
 ): Array<UsageSpeedDailyProfile> {
     const formatter = createHourFormatter(timeZone)
-    const nowDay = dayHourKey(Date.now(), formatter).day
+    const nowSlot = daySlotKey(Date.now(), formatter)
     const profiles: Array<UsageSpeedDailyProfile> = []
     for (const [model, list] of byModelMap) {
-        // hour -> { tokens, seconds } split into history (full days) and today
+        // slot -> { tokens, seconds } split into history (full days) and today
         const history = new Map<number, { tokens: number; seconds: number }>()
         const today = new Map<number, { tokens: number; seconds: number }>()
         for (const sample of list) {
-            // attribute the sample to the hour of its midpoint
-            const { day, hour } = dayHourKey(Math.floor((sample.startedAt + sample.endedAt) / 2), formatter)
-            const target = day === nowDay ? today : history
-            const entry = target.get(hour) ?? { tokens: 0, seconds: 0 }
+            // attribute the sample to the slot of its midpoint
+            const { day, slot } = daySlotKey(Math.floor((sample.startedAt + sample.endedAt) / 2), formatter)
+            const target = day === nowSlot.day ? today : history
+            const entry = target.get(slot) ?? { tokens: 0, seconds: 0 }
             entry.tokens += sample.outputTokens
             entry.seconds += sample.generationSeconds
-            target.set(hour, entry)
+            target.set(slot, entry)
         }
         profiles.push({
             model,
             history: Array.from(history.entries())
-                .map(([hour, e]) => ({ hour, tokensPerSec: e.seconds > 0 ? e.tokens / e.seconds : 0, outputTokens: e.tokens }))
+                .map(([slot, e]) => ({ hour: slot, tokensPerSec: e.seconds > 0 ? e.tokens / e.seconds : 0, outputTokens: e.tokens }))
                 .sort((a, b) => a.hour - b.hour),
             today: Array.from(today.entries())
-                .map(([hour, e]) => ({ hour, tokensPerSec: e.seconds > 0 ? e.tokens / e.seconds : 0, outputTokens: e.tokens }))
+                .map(([slot, e]) => ({ hour: slot, tokensPerSec: e.seconds > 0 ? e.tokens / e.seconds : 0, outputTokens: e.tokens }))
                 .sort((a, b) => a.hour - b.hour),
-            todayKey: nowDay
+            todayKey: nowSlot.day
         })
     }
     return profiles.sort((a, b) => {
