@@ -969,3 +969,50 @@ export type UsageSummaryResponse = {
     byModel: UsageSummaryBucket[]
     updatedAt: number
 }
+
+// --- Token speed (per-model output tokens/sec, our-main feature) ---
+
+export type UsageSpeedModelStat = {
+    /** model id (or 'unknown') */
+    model: string
+    /** mean output tokens/sec over active generation spans */
+    meanTokensPerSec: number
+    /** median output tokens/sec */
+    medianTokensPerSec: number
+    /** P90 output tokens/sec */
+    p90TokensPerSec: number
+    /** number of speed samples (generation spans) behind the stats */
+    samples: number
+    /** total output tokens counted in speed calculation for this model */
+    outputTokens: number
+    /** total generation seconds counted */
+    generationSeconds: number
+}
+
+export type UsageSpeedBucketPoint = {
+    /** bucket start epoch ms (15-minute grid) */
+    bucket: number
+    /** weighted mean output tokens/sec within the bucket */
+    tokensPerSec: number
+    /** output tokens in the bucket */
+    outputTokens: number
+    /** generation seconds in the bucket */
+    generationSeconds: number
+}
+
+export type UsageSpeedSeries = {
+    model: string
+    points: Array<UsageSpeedBucketPoint>
+}
+
+export type UsageSpeedResponse = {
+    range: {
+        from: number | null
+        to: number
+    }
+    /** consecutive-delta gap threshold (ms) used to split generation spans */
+    gapThresholdMs: number
+    byModel: UsageSpeedModelStat[]
+    series: UsageSpeedSeries[]
+    updatedAt: number
+}

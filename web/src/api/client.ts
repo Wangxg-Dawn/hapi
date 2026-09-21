@@ -57,6 +57,7 @@ import type {
     HubSettingsResponse,
     UpdateHubSettingsRequest,
     UsageSummaryResponse,
+    UsageSpeedResponse,
     UploadFileResponse
 } from '@hapi/protocol/apiTypes'
 import type { AgentFlavor, MessageDeliveryMode } from '@hapi/protocol'
@@ -790,6 +791,11 @@ export class ApiClient {
             timeZone
         })
         return await this.request<UsageSummaryResponse>(`/api/usage/summary?${params.toString()}`)
+    }
+
+    async getUsageSpeed(range: '7d' | '30d' | 'all' = '7d'): Promise<UsageSpeedResponse> {
+        const params = new URLSearchParams({ range })
+        return await this.request<UsageSpeedResponse>(`/api/usage/speed?${params.toString()}`)
     }
 
     async restartMachineRunner(machineId: string): Promise<{ message: string }> {
