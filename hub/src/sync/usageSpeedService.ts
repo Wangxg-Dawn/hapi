@@ -26,8 +26,8 @@ import { collectUsageEvents, cumulativeSnapshotDelta, type UsageSnapshot } from 
 
 const GAP_THRESHOLD_MS = 120_000
 const BUCKET_MS = 15 * 60 * 1000
-/** floor for a span duration so a single bursty delta cannot inflate speed */
-const MIN_SPAN_MS = 1_000
+/** intervals shorter than this are treated as duplicate/burst reports, not generation */
+const MIN_INTERVAL_MS = 500
 
 type RequestDelta = {
     sessionId: string
@@ -113,6 +113,13 @@ type SpeedSample = {
 }
 
 function buildSpeedSamples(deltas: RequestDelta[]): SpeedSample[] {
+    // Per-interval model: a delta's output tokens are attributed to the wall
+    // time since the previous delta of the same (session, model). Intervals
+    // longer than GAP_THRESHOLD_MS are tool execution / idle waiting and are
+    // dropped (their tokens carry no measurable generation time). The first
+    // delta of a stream has no known duration and is dropped too. This avoids
+    // the old span model's 1-second floor artifacts, where a lone large delta
+    // produced absurd thousands-of-tokens/sec samples.
     const samples: SpeedSample[] = []
     const streams = new Map<string, RequestDelta[]>()
     for (const delta of deltas) {
@@ -122,32 +129,22 @@ function buildSpeedSamples(deltas: RequestDelta[]): SpeedSample[] {
         else streams.set(key, [delta])
     }
     for (const list of streams.values()) {
-        let spanStart = list[0].createdAt
-        let spanEnd = list[0].createdAt
-        let spanTokens = 0
-        const flush = () => {
-            const durationSec = Math.max((spanEnd - spanStart) / 1000, MIN_SPAN_MS / 1000)
-            if (spanTokens > 0) {
-                samples.push({
-                    model: list[0].model,
-                    tokensPerSec: spanTokens / durationSec,
-                    outputTokens: spanTokens,
-                    generationSeconds: durationSec,
-                    startedAt: spanStart,
-                    endedAt: spanEnd
-                })
-            }
+        for (let i = 1; i < list.length; i++) {
+            const prev = list[i - 1]
+            const cur = list[i]
+            const gapMs = cur.createdAt - prev.createdAt
+            if (gapMs < MIN_INTERVAL_MS || gapMs > GAP_THRESHOLD_MS) continue
+            if (cur.outputTokens <= 0) continue
+            const seconds = gapMs / 1000
+            samples.push({
+                model: cur.model,
+                tokensPerSec: cur.outputTokens / seconds,
+                outputTokens: cur.outputTokens,
+                generationSeconds: seconds,
+                startedAt: prev.createdAt,
+                endedAt: cur.createdAt
+            })
         }
-        for (const delta of list) {
-            if (delta.createdAt - spanEnd > GAP_THRESHOLD_MS) {
-                flush()
-                spanStart = delta.createdAt
-                spanTokens = 0
-            }
-            spanEnd = delta.createdAt
-            spanTokens += delta.outputTokens
-        }
-        flush()
     }
     return samples
 }
