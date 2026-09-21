@@ -801,7 +801,10 @@ export class ApiClient {
     }
 
     async getUsageSpeed(range: '7d' | '30d' | 'all' = '7d'): Promise<UsageSpeedResponse> {
-        const params = new URLSearchParams({ range })
+        const params = new URLSearchParams({
+            range,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+        })
         return await this.request<UsageSpeedResponse>(`/api/usage/speed?${params.toString()}`)
     }
 

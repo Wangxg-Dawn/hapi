@@ -1005,6 +1005,32 @@ export type UsageSpeedSeries = {
     points: Array<UsageSpeedBucketPoint>
 }
 
+// Hour-of-day profile: historical full days (excluding today) vs today.
+export type UsageSpeedHourPoint = {
+    /** hour 0-23 (in the requested timeZone) */
+    hour: number
+    /** weighted mean output tokens/sec across historical full days */
+    tokensPerSec: number
+    /** total output tokens behind this hour bucket (historical) */
+    outputTokens: number
+}
+
+export type UsageSpeedTodayPoint = {
+    hour: number
+    tokensPerSec: number
+    outputTokens: number
+}
+
+export type UsageSpeedDailyProfile = {
+    model: string
+    /** average per-hour speed over historical full days in range (today excluded) */
+    history: Array<UsageSpeedHourPoint>
+    /** today's per-hour actuals (only hours with data) */
+    today: Array<UsageSpeedTodayPoint>
+    /** local day key of "today" in the requested timeZone, e.g. 2026-09-21 */
+    todayKey: string
+}
+
 export type UsageSpeedResponse = {
     range: {
         from: number | null
@@ -1014,5 +1040,7 @@ export type UsageSpeedResponse = {
     gapThresholdMs: number
     byModel: UsageSpeedModelStat[]
     series: UsageSpeedSeries[]
+    /** hour-of-day profile per model: history (full days) vs today */
+    dailyProfiles: Array<UsageSpeedDailyProfile>
     updatedAt: number
 }

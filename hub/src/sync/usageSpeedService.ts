@@ -1,5 +1,6 @@
 import type {
     UsageSpeedBucketPoint,
+    UsageSpeedDailyProfile,
     UsageSpeedModelStat,
     UsageSpeedResponse,
     UsageSpeedSeries
@@ -157,6 +158,65 @@ function percentile(sortedValues: number[], p: number): number {
     return sortedValues[Math.max(0, index)]
 }
 
+function createHourFormatter(timeZone: string): Intl.DateTimeFormat {
+    return new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    })
+}
+
+/** Returns [dayKey, hour] for a timestamp in the given timeZone. */
+function dayHourKey(timestamp: number, formatter: Intl.DateTimeFormat): { day: string; hour: number } {
+    const parts = formatter.formatToParts(new Date(timestamp))
+    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ''
+    const hourRaw = get('hour')
+    const hour = Number.parseInt(hourRaw === '24' ? '0' : hourRaw, 10)
+    return { day: `${get('year')}-${get('month')}-${get('day')}`, hour: Number.isFinite(hour) ? hour : 0 }
+}
+
+function buildDailyProfiles(
+    byModelMap: Map<string, SpeedSample[]>,
+    timeZone: string
+): Array<UsageSpeedDailyProfile> {
+    const formatter = createHourFormatter(timeZone)
+    const nowDay = dayHourKey(Date.now(), formatter).day
+    const profiles: Array<UsageSpeedDailyProfile> = []
+    for (const [model, list] of byModelMap) {
+        // hour -> { tokens, seconds } split into history (full days) and today
+        const history = new Map<number, { tokens: number; seconds: number }>()
+        const today = new Map<number, { tokens: number; seconds: number }>()
+        for (const sample of list) {
+            // attribute the sample to the hour of its midpoint
+            const { day, hour } = dayHourKey(Math.floor((sample.startedAt + sample.endedAt) / 2), formatter)
+            const target = day === nowDay ? today : history
+            const entry = target.get(hour) ?? { tokens: 0, seconds: 0 }
+            entry.tokens += sample.outputTokens
+            entry.seconds += sample.generationSeconds
+            target.set(hour, entry)
+        }
+        profiles.push({
+            model,
+            history: Array.from(history.entries())
+                .map(([hour, e]) => ({ hour, tokensPerSec: e.seconds > 0 ? e.tokens / e.seconds : 0, outputTokens: e.tokens }))
+                .sort((a, b) => a.hour - b.hour),
+            today: Array.from(today.entries())
+                .map(([hour, e]) => ({ hour, tokensPerSec: e.seconds > 0 ? e.tokens / e.seconds : 0, outputTokens: e.tokens }))
+                .sort((a, b) => a.hour - b.hour),
+            todayKey: nowDay
+        })
+    }
+    return profiles.sort((a, b) => {
+        const aTok = a.history.reduce((s, p) => s + p.outputTokens, 0) + a.today.reduce((s, p) => s + p.outputTokens, 0)
+        const bTok = b.history.reduce((s, p) => s + p.outputTokens, 0) + b.today.reduce((s, p) => s + p.outputTokens, 0)
+        return bTok - aTok
+    })
+}
+
 export function getUsageSpeed(
     store: Store,
     namespace: string,
@@ -228,6 +288,7 @@ export function getUsageSpeed(
         gapThresholdMs: GAP_THRESHOLD_MS,
         byModel,
         series,
+        dailyProfiles: buildDailyProfiles(byModelMap, timeZone),
         updatedAt: now
     }
 }

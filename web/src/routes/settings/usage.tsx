@@ -47,6 +47,67 @@ function formatSpeed(value: number): string {
     return value >= 100 ? value.toFixed(0) : value.toFixed(1)
 }
 
+function DailyProfileChart(props: { profile: { history: Array<{ hour: number; tokensPerSec: number; outputTokens: number }>; today: Array<{ hour: number; tokensPerSec: number; outputTokens: number }>; todayKey: string } }) {
+    const { t } = useTranslation()
+    const historyByHour = new Map(props.profile.history.map((p) => [p.hour, p]))
+    const todayByHour = new Map(props.profile.today.map((p) => [p.hour, p]))
+    const maxSpeed = Math.max(
+        ...Array.from(historyByHour.values()).map((p) => p.tokensPerSec),
+        ...Array.from(todayByHour.values()).map((p) => p.tokensPerSec),
+        0.1
+    )
+    const currentHour = new Date().getHours()
+    const hours = Array.from({ length: 24 }, (_, hour) => hour)
+    return (
+        <div className="mt-2">
+            <div className="flex items-end gap-[2px] h-12" role="img" aria-label={t('settings.usage.speed.profileHint')}>
+                {hours.map((hour) => {
+                    const hist = historyByHour.get(hour)
+                    const today = todayByHour.get(hour)
+                    return (
+                        <div
+                            key={hour}
+                            className="relative min-w-[8px] flex-1 h-full flex items-end"
+                            title={t('settings.usage.speed.profileTooltip', {
+                                hour: String(hour).padStart(2, '0'),
+                                hist: hist ? formatSpeed(hist.tokensPerSec) : '—',
+                                today: today ? formatSpeed(today.tokensPerSec) : '—'
+                            })}
+                        >
+                            <div
+                                className="w-full rounded-sm bg-[var(--app-hint)]"
+                                style={{ height: `${hist ? Math.max(4, (hist.tokensPerSec / maxSpeed) * 100) : 2}%`, opacity: hist ? 0.35 : 0.15 }}
+                            />
+                            {today ? (
+                                <div
+                                    className="absolute left-1/2 -translate-x-1/2 rounded-full bg-[var(--app-link)]"
+                                    style={{
+                                        bottom: `${Math.max(4, (today.tokensPerSec / maxSpeed) * 100)}%`,
+                                        width: '7px',
+                                        height: '7px',
+                                        boxShadow: '0 0 0 2px var(--app-bg)',
+                                        zIndex: 2
+                                    }}
+                                />
+                            ) : null}
+                            {hour === currentHour ? (
+                                <div className="absolute bottom-0 left-0 right-0 h-full w-full border-b-2 border-[var(--app-link)] opacity-60" />
+                            ) : null}
+                        </div>
+                    )
+                })}
+            </div>
+            <div className="mt-1 flex items-center justify-between text-[10px] text-[var(--app-hint)]">
+                <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
+            </div>
+            <div className="mt-1 flex items-center gap-3 text-[10px] text-[var(--app-hint)]">
+                <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-sm bg-[var(--app-hint)] opacity-40" />{t('settings.usage.speed.legendHistory')}</span>
+                <span className="inline-flex items-center gap-1"><span className="inline-block h-[7px] w-[7px] rounded-full bg-[var(--app-link)]" />{t('settings.usage.speed.legendToday')}</span>
+            </div>
+        </div>
+    )
+}
+
 function UsageSpeedSection(props: { range: UsageRange }) {
     const { api } = useAppContext()
     const { t } = useTranslation()
@@ -92,6 +153,7 @@ function UsageSpeedSection(props: { range: UsageRange }) {
                     const series = data.series.find((s) => s.model === stat.model)
                     const points = series?.points ?? []
                     const maxSpeed = Math.max(...points.map((p) => p.tokensPerSec), 0.1)
+                    const profile = data.dailyProfiles?.find((p) => p.model === stat.model)
                     return (
                         <div key={stat.model} className="px-3 py-3">
                             <div className="flex items-center justify-between gap-3 text-sm">
@@ -103,6 +165,9 @@ function UsageSpeedSection(props: { range: UsageRange }) {
                                 <span>{t('settings.usage.speed.p90', { value: formatSpeed(stat.p90TokensPerSec) })}</span>
                                 <span>{t('settings.usage.speed.samples', { count: stat.samples.toLocaleString() })}</span>
                             </div>
+                            {profile && (profile.history.length > 0 || profile.today.length > 0) ? (
+                                <DailyProfileChart profile={profile} />
+                            ) : null}
                             {points.length > 1 ? (
                                 <div className="mt-2 flex h-8 items-end gap-[2px]" title={t('settings.usage.speed.bucketHint')}>
                                     {points.slice(-96).map((point) => (
