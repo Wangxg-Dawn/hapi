@@ -66,20 +66,39 @@ function DailyProfileChart(props: {
     const slotLabel = (slot: number) =>
         `${String(Math.floor(slot / 4)).padStart(2, '0')}:${String((slot % 4) * 15).padStart(2, '0')}`
     const x = (slot: number) => (slot + 0.5) * (100 / SLOTS)
-    const yFor = (v: number) => Math.max(1, (v / maxSpeed) * CHART_H)
-
-    // Break today's polyline at gaps so we never draw a long straight line
-    // across unused hours.
-    const presentSlots = Array.from(todayBySlot.keys()).sort((a, b) => a - b)
-    const runs: number[][] = []
-    for (const slot of presentSlots) {
-        const last = runs[runs.length - 1]
-        if (last && slot - last[last.length - 1] <= 2) last.push(slot)
-        else runs.push([slot])
-    }
+    const yFor = (v: number) => Math.min(CHART_H, Math.max(0, (v / maxSpeed) * CHART_H))
 
     const now = new Date()
-    const currentX = x(now.getHours() * 4 + Math.floor(now.getMinutes() / 15))
+    const currentSlot = now.getHours() * 4 + Math.floor(now.getMinutes() / 15)
+    const currentX = x(currentSlot)
+
+    // One continuous smooth curve across the whole day up to "now": hours
+    // without data count as 0 so the line stays connected instead of
+    // jumping between scattered points.
+    const presentSlots = Array.from(todayBySlot.keys())
+    const lastSlot = Math.max(currentSlot, presentSlots.length > 0 ? Math.max(...presentSlots) : 0)
+    const curvePoints: Array<[number, number]> = []
+    for (let slot = 0; slot <= lastSlot; slot++) {
+        const entry = todayBySlot.get(slot)
+        curvePoints.push([x(slot), CHART_H - yFor(entry ? entry.tokensPerSec : 0)])
+    }
+    const smoothPath = (pts: Array<[number, number]>) => {
+        if (pts.length < 2) return ''
+        let d = `M ${pts[0][0]} ${pts[0][1]}`
+        for (let i = 0; i < pts.length - 1; i++) {
+            const p0 = pts[i - 1] ?? pts[i]
+            const p1 = pts[i]
+            const p2 = pts[i + 1]
+            const p3 = pts[i + 2] ?? p2
+            const c1x = p1[0] + (p2[0] - p0[0]) / 6
+            const c1y = p1[1] + (p2[1] - p0[1]) / 6
+            const c2x = p2[0] - (p3[0] - p1[0]) / 6
+            const c2y = p2[1] - (p3[1] - p1[1]) / 6
+            d += ` C ${c1x} ${c1y} ${c2x} ${c2y} ${p2[0]} ${p2[1]}`
+        }
+        return d
+    }
+    const todayLine = smoothPath(curvePoints)
 
     return (
         <div className="mt-3">
@@ -105,32 +124,19 @@ function DailyProfileChart(props: {
                             )
                         })}
                     </div>
-                    {/* today line (colored), broken at gaps */}
+                    {/* today: one smooth continuous curve (gaps count as 0) */}
                     <svg viewBox={`0 0 100 ${CHART_H}`} preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
-                        {runs.map((run, i) =>
-                            run.length > 1 ? (
-                                <polyline
-                                    key={`run-${i}`}
-                                    points={run.map((slot) => `${x(slot)},${CHART_H - yFor(todayBySlot.get(slot)!.tokensPerSec)}`).join(' ')}
-                                    fill="none"
-                                    stroke="var(--app-link)"
-                                    strokeWidth="1.6"
-                                    strokeLinejoin="round"
-                                    strokeLinecap="round"
-                                    vectorEffect="non-scaling-stroke"
-                                />
-                            ) : null
-                        )}
-                        {runs.flat().map((slot) => (
-                            <circle
-                                key={`dot-${slot}`}
-                                cx={x(slot)}
-                                cy={CHART_H - yFor(todayBySlot.get(slot)!.tokensPerSec)}
-                                r="1.7"
-                                fill="var(--app-link)"
+                        {todayLine ? (
+                            <path
+                                d={todayLine}
+                                fill="none"
+                                stroke="var(--app-link)"
+                                strokeWidth="1.6"
+                                strokeLinejoin="round"
+                                strokeLinecap="round"
                                 vectorEffect="non-scaling-stroke"
                             />
-                        ))}
+                        ) : null}
                     </svg>
                     {/* current time marker */}
                     <div className="absolute top-0 bottom-0 w-px bg-[var(--app-link)] opacity-30" style={{ left: `${currentX}%` }} />
