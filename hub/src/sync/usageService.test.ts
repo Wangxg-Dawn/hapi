@@ -17,6 +17,45 @@ function addAgentMessage(store: Store, sessionId: string, content: unknown, crea
 }
 
 describe('usage service', () => {
+    it('counts claude per-request usage forwarded as a token_count message', () => {
+        const store = new Store(':memory:')
+        const session = store.sessions.getOrCreateSession(
+            'claude-token-count-test',
+            { path: '/tmp', host: 'test', flavor: 'claude' },
+            null,
+            'default',
+            'fable[1m]'
+        )
+
+        // Shape sent by claudeRemoteLauncher from the partial stream's
+        // message_delta: input tokens already include the cached ones.
+        addAgentMessage(store, session.id, {
+            type: 'codex',
+            data: {
+                type: 'token_count',
+                model: 'deepseek-v4.1-flash',
+                usageSchema: 'hapi.usage.v1',
+                inputTokenSemantics: 'includes-cache',
+                info: {
+                    total: {
+                        inputTokens: 25_846,
+                        outputTokens: 431,
+                        cachedInputTokens: 64,
+                        cacheWriteInputTokens: 0
+                    }
+                }
+            }
+        })
+
+        const result = getUsageSummary(store, 'default', 'all')
+        expect(result.totals.requests).toBe(1)
+        expect(result.totals.inputTokens).toBe(25_846)
+        expect(result.totals.outputTokens).toBe(431)
+        expect(result.totals.cacheReadTokens).toBe(64)
+        expect(result.byAgent.find((row) => row.key === 'claude')?.outputTokens).toBe(431)
+        expect(result.byModel.find((row) => row.key === 'deepseek-v4.1-flash')?.outputTokens).toBe(431)
+    })
+
     it('normalizes historical Claude input that excludes cached tokens', () => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession(

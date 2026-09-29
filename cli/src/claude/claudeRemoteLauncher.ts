@@ -8,6 +8,8 @@ import { SDKAssistantMessage, SDKMessage, SDKUserMessage } from "./sdk";
 import { formatClaudeMessageForInk } from "@/ui/messageFormatterInk";
 import { logger } from "@/ui/logger";
 import { SDKToLogConverter } from "./utils/sdkToLogConverter";
+import { ClaudeStreamUsage } from "./utils/streamUsage";
+import { convertAgentMessage } from "@/agent/messageConverter";
 import { PLAN_FAKE_REJECT } from "./sdk/prompts";
 import { EnhancedMode } from "./loop";
 import { OutgoingMessageQueue } from "./utils/OutgoingMessageQueue";
@@ -140,6 +142,11 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
             (logMessage) => session.client.sendClaudeSessionMessage(logMessage)
         );
 
+        // Claude Code's assistant messages carry zeroed usage; the real
+        // per-request numbers ride on the partial stream. Forwarding them keeps
+        // claude sessions in the hub's token usage / token speed stats.
+        const streamUsage = new ClaudeStreamUsage();
+
         permissionHandler.setOnPermissionRequest((toolCallId: string) => {
             messageQueue.releaseToolCall(toolCallId);
         });
@@ -161,6 +168,18 @@ class ClaudeRemoteLauncher extends RemoteLauncherBase {
         let ongoingToolCalls = new Map<string, { parentToolCallId: string | null }>();
 
         function onMessage(message: SDKMessage) {
+            const usage = streamUsage.onMessage(message);
+            if (usage) {
+                const usageMessage = convertAgentMessage({
+                    type: 'usage',
+                    inputTokens: usage.inputTokens,
+                    outputTokens: usage.outputTokens,
+                    cacheReadTokens: usage.cacheReadTokens,
+                    cacheCreationTokens: usage.cacheCreationTokens
+                }, usage.model);
+                if (usageMessage) session.client.sendAgentMessage(usageMessage);
+            }
+
             formatClaudeMessageForInk(message, messageBuffer);
             permissionHandler.onMessage(message);
 

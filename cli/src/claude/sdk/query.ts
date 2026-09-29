@@ -327,7 +327,10 @@ export function query(config: {
     }
 
     // Build command arguments
-    const args = ['--output-format', 'stream-json', '--verbose']
+    // `--include-partial-messages` is what gives us per-request token usage:
+    // the complete assistant messages carry zeroed usage, the real numbers ride
+    // on the partial stream's `message_delta` (see claude/utils/streamUsage.ts).
+    const args = ['--output-format', 'stream-json', '--verbose', '--include-partial-messages']
     let cleanupMcpConfig: (() => void) | null = null
 
     if (customSystemPrompt) args.push('--system-prompt', stripNewlinesForWindowsShellArg(customSystemPrompt))

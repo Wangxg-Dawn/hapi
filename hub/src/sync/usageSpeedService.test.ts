@@ -1,5 +1,41 @@
 import { describe, expect, it } from 'bun:test'
+import { Store } from '../store'
+import { getUsageSpeed } from './usageSpeedService'
 import type { UsageEvent } from '../store/usage'
+
+/**
+ * The wire shape claudeRemoteLauncher sends per API request: the CLI reads the
+ * real usage off the partial stream's `message_delta` (assistant messages carry
+ * zeros) and forwards it as a token_count message.
+ */
+function addClaudeUsage(store: Store, sessionId: string, createdAt: number, model: string, outputTokens: number): void {
+    store.messages.copyMessageToSession(sessionId, {
+        content: {
+            role: 'agent',
+            content: {
+                type: 'codex',
+                data: {
+                    type: 'token_count',
+                    model,
+                    usageSchema: 'hapi.usage.v1',
+                    inputTokenSemantics: 'includes-cache',
+                    info: {
+                        total: {
+                            inputTokens: 32_000 + outputTokens,
+                            outputTokens,
+                            cachedInputTokens: 256,
+                            cacheWriteInputTokens: 0
+                        }
+                    }
+                }
+            }
+        },
+        createdAt,
+        localId: null,
+        invokedAt: createdAt,
+        scheduledAt: null
+    })
+}
 
 // buildSpeedSamples is not exported; getUsageSpeed requires a live store, so
 // this test exercises the span math through a local reimplementation guard:
@@ -29,6 +65,30 @@ describe('usageSpeedService span math (documented contract)', () => {
         const spanSeconds = (events.at(-1)!.createdAt - events[0].createdAt) / 1000
         expect(spanTokens / spanSeconds).toBe(15)
     })
+    it('claude per-request usage produces speed samples', () => {
+        const store = new Store(':memory:')
+        const session = store.sessions.getOrCreateSession(
+            'claude-speed-test',
+            { path: '/tmp', host: 'test', flavor: 'claude' },
+            null,
+            'default',
+            'fable[1m]'
+        )
+        const now = Date.now()
+        // Two requests 10s apart, 500 output tokens each: the second request's
+        // interval is one sample -> 50 tok/s. The first has no predecessor and
+        // is dropped, exactly like a pi/codex stream start.
+        addClaudeUsage(store, session.id, now - 20_000, 'deepseek-v4.1-flash', 500)
+        addClaudeUsage(store, session.id, now - 10_000, 'deepseek-v4.1-flash', 500)
+
+        const result = getUsageSpeed(store, 'default', 'all')
+        const model = result.byModel.find((row) => row.model === 'deepseek-v4.1-flash')
+
+        expect(model?.samples).toBe(1)
+        expect(model?.outputTokens).toBe(500)
+        expect(model?.meanTokensPerSec).toBe(50)
+    })
+
     it('a gap larger than the threshold splits spans', () => {
         const events: Array<Pick<UsageEvent, 'createdAt' | 'outputTokens'>> = [
             { createdAt: 0, outputTokens: 100 },
