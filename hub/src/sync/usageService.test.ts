@@ -56,10 +56,10 @@ describe('usage service', () => {
         expect(result.byModel.find((row) => row.key === 'deepseek-v4.1-flash')?.outputTokens).toBe(431)
     })
 
-    it('normalizes historical Claude input that excludes cached tokens', () => {
+    it('ignores claude assistant-message usage (claude reports requests instead)', () => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession(
-            'claude-usage-test',
+            'claude-assistant-ignored-test',
             { path: '/tmp', host: 'test', flavor: 'claude' },
             null,
             'default',
@@ -77,13 +77,41 @@ describe('usage service', () => {
                 }
             }
         })
+
+        const result = getUsageSummary(store, 'default', 'all')
+        expect(result.totals.requests).toBe(0)
+        expect(result.byAgent).toHaveLength(0)
+        expect(result.byModel).toHaveLength(0)
+    })
+
+    it('normalizes output-family assistant usage that excludes cached tokens', () => {
+        const store = new Store(':memory:')
+        const session = store.sessions.getOrCreateSession(
+            'agy-usage-test',
+            { path: '/tmp', host: 'test', flavor: 'agy' },
+            null,
+            'default',
+            'test-model'
+        )
+
         addAgentMessage(store, session.id, {
             type: 'output',
             data: {
                 type: 'assistant',
                 message: {
-                    id: 'claude-message',
-                    model: 'claude-test',
+                    id: 'agy-message',
+                    model: 'agy-test',
+                    usage: { input_tokens: 10, output_tokens: 2, cache_read_input_tokens: 80 }
+                }
+            }
+        })
+        addAgentMessage(store, session.id, {
+            type: 'output',
+            data: {
+                type: 'assistant',
+                message: {
+                    id: 'agy-message',
+                    model: 'agy-test',
                     usage: { input_tokens: 12, output_tokens: 3, cache_read_input_tokens: 90 }
                 }
             }
@@ -96,7 +124,7 @@ describe('usage service', () => {
         expect(result.totals.cacheReadTokens).toBe(90)
         expect(result.totals.totalTokens).toBe(105)
         expect(result.totals.uncachedTokens).toBe(15)
-        expect(result.byModel.find((row) => row.key === 'claude-test')?.totalTokens).toBe(105)
+        expect(result.byModel.find((row) => row.key === 'agy-test')?.totalTokens).toBe(105)
         store.close()
     })
 
@@ -622,7 +650,7 @@ describe('usage service', () => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession(
             'timezone-usage-test',
-            { path: '/tmp', host: 'test', flavor: 'claude' },
+            { path: '/tmp', host: 'test', flavor: 'agy' },
             null,
             'default'
         )
@@ -647,7 +675,7 @@ describe('usage service', () => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession(
             'incremental-usage-test',
-            { path: '/tmp', host: 'test', flavor: 'claude' },
+            { path: '/tmp', host: 'test', flavor: 'agy' },
             null,
             'default',
             'test-model'
@@ -684,7 +712,7 @@ describe('usage service', () => {
         const store = new Store(':memory:')
         const session = store.sessions.getOrCreateSession(
             'rewound-usage-test',
-            { path: '/tmp', host: 'test', flavor: 'claude' },
+            { path: '/tmp', host: 'test', flavor: 'agy' },
             null,
             'default',
             'test-model'
@@ -871,14 +899,14 @@ describe('usage service', () => {
         const store = new Store(':memory:')
         const source = store.sessions.getOrCreateSession(
             'usage-merge-source',
-            { path: '/tmp', host: 'test', flavor: 'claude' },
+            { path: '/tmp', host: 'test', flavor: 'agy' },
             null,
             'default',
             'test-model'
         )
         const target = store.sessions.getOrCreateSession(
             'usage-merge-target',
-            { path: '/tmp', host: 'test', flavor: 'claude' },
+            { path: '/tmp', host: 'test', flavor: 'agy' },
             null,
             'default',
             'test-model'

@@ -64,9 +64,17 @@ function parseUsageEvent(session: StoredSession, message: StoredMessage): UsageE
     const data = asRecord(payload.data)
     if (!data) return null
 
-    // Claude stream-json/SDK messages. A stream emits several updates for one
-    // assistant message, so the provider's message id is the stable upsert key.
+    // Claude's own per-message usage is not trustworthy: depending on the CLI
+    // version and the relay in front of it, an assistant message carries either
+    // zeroed usage or a partial snapshot (input/cache counted, output always 0,
+    // one entry per streamed content block). Deriving claude usage from it made
+    // the dashboard report tens of millions of input tokens against no output.
+    // Claude usage comes from the per-request `token_count` records the CLI
+    // forwards off the partial stream instead (see claude/utils/streamUsage.ts)
+    // — the same delta shape used below for codex/pi. Other `output`-family
+    // flavors keep the assistant-message path.
     if (payload.type === 'output' && data.type === 'assistant') {
+        if (sessionAgent(session) === 'claude') return null
         const assistant = asRecord(data.message)
         const usage = asRecord(assistant?.usage)
         if (!usage) return null
