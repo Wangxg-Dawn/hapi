@@ -14,10 +14,17 @@ describe('Claude model options', () => {
     })
 
     it('exposes friendly labels for Claude model presets', () => {
-        expect(CLAUDE_MODEL_PRESETS).toEqual(['sonnet', 'sonnet[1m]', 'opus', 'opus[1m]', 'fable', 'fable[1m]'])
-        expect(getClaudeModelLabel('sonnet[1m]')).toBe('Sonnet 1M')
-        expect(getClaudeModelLabel('opus[1m]')).toBe('Opus 1M')
-        expect(getClaudeModelLabel('fable[1m]')).toBe('Fable 1M')
+        expect(CLAUDE_MODEL_PRESETS).toEqual([
+            'mimo-v2.6-pro[1M]',
+            'glm-5.3[1M]',
+            'deepseek-v4.1-flash[1M]',
+            'glm-5.3-flashx[1M]',
+            'glm-5.3-flash[1M]',
+            'mimo-v2.6-flash[1M]'
+        ])
+        expect(getClaudeModelLabel('glm-5.3[1M]')).toBe('GLM-5.3')
+        expect(getClaudeModelLabel('mimo-v2.6-pro[1M]')).toBe('MiMo v2.6 Pro')
+        expect(getClaudeModelLabel('deepseek-v4.1-flash[1M]')).toBe('DeepSeek V4.1 Flash')
     })
 })
 

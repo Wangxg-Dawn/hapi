@@ -74,7 +74,7 @@ export function getContextBudgetTokens(model: string | null | undefined, flavor?
         if (!trimmedModel) {
             return DEFAULT_CLAUDE_CONTEXT_WINDOW_TOKENS
         }
-        if (isClaudeModelPreset(trimmedModel) || trimmedModel.startsWith('claude-')) {
+        if (isClaudeModelPreset(trimmedModel) || /^(sonnet|opus|fable|haiku)(\[1m\])?$/i.test(trimmedModel) || trimmedModel.startsWith('claude-')) {
             // Fable ships with a 1M window even under its bare id: the SDK
             // result message reports modelUsage["claude-fable-5"].contextWindow
             // = 1,000,000, so the "[1m]" suffix check alone would undercount
@@ -83,7 +83,8 @@ export function getContextBudgetTokens(model: string | null | undefined, flavor?
             const isFable = trimmedModel === 'fable'
                 || trimmedModel === 'fable[1m]'
                 || trimmedModel.startsWith('claude-fable')
-            return trimmedModel.endsWith('[1m]') || isFable
+            // Relay model ids in the picker carry an uppercase "[1M]" suffix.
+            return /\[1m\]$/i.test(trimmedModel) || isFable
                 ? LARGE_CLAUDE_CONTEXT_WINDOW_TOKENS
                 : DEFAULT_CLAUDE_CONTEXT_WINDOW_TOKENS
         }

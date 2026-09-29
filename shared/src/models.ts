@@ -1,10 +1,15 @@
+// Claude Code resolves tier presets (sonnet/opus/fable) through the
+// ANTHROPIC_DEFAULT_*_MODEL env aliases, so a preset picker entry only names a
+// slot - not the model that actually runs. This fork lists the relay's model
+// ids directly: what you pick is what runs. The tiers still exist underneath
+// for the env defaults (Default slot, Claude Code's background haiku calls).
 export const CLAUDE_MODEL_LABELS = {
-    sonnet: 'Sonnet',
-    'sonnet[1m]': 'Sonnet 1M',
-    opus: 'Opus',
-    'opus[1m]': 'Opus 1M',
-    fable: 'Fable',
-    'fable[1m]': 'Fable 1M'
+    'mimo-v2.6-pro[1M]': 'MiMo v2.6 Pro',
+    'glm-5.3[1M]': 'GLM-5.3',
+    'deepseek-v4.1-flash[1M]': 'DeepSeek V4.1 Flash',
+    'glm-5.3-flashx[1M]': 'GLM-5.3-FlashX',
+    'glm-5.3-flash[1M]': 'GLM-5.3-Flash',
+    'mimo-v2.6-flash[1M]': 'MiMo v2.6 Flash'
 } as const
 
 export type ClaudeModelPreset = keyof typeof CLAUDE_MODEL_LABELS

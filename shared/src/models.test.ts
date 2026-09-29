@@ -18,6 +18,9 @@ describe('isClaudeModelPreset', () => {
 
     test('rejects unknown model string', () => {
         expect(isClaudeModelPreset('haiku')).toBe(false)
+        // Tier presets are gone from the picker: entries now name relay models.
+        expect(isClaudeModelPreset('sonnet')).toBe(false)
+        expect(isClaudeModelPreset('fable[1m]')).toBe(false)
     })
 
     test('rejects null and undefined', () => {
@@ -28,13 +31,13 @@ describe('isClaudeModelPreset', () => {
 
 describe('getClaudeModelLabel', () => {
     test('returns label for known presets', () => {
-        expect(getClaudeModelLabel('sonnet')).toBe('Sonnet')
-        expect(getClaudeModelLabel('opus')).toBe('Opus')
-        expect(getClaudeModelLabel('opus[1m]')).toBe('Opus 1M')
+        expect(getClaudeModelLabel('glm-5.3[1M]')).toBe('GLM-5.3')
+        expect(getClaudeModelLabel('mimo-v2.6-pro[1M]')).toBe('MiMo v2.6 Pro')
+        expect(getClaudeModelLabel('deepseek-v4.1-flash[1M]')).toBe('DeepSeek V4.1 Flash')
     })
 
     test('trims whitespace before lookup', () => {
-        expect(getClaudeModelLabel('  sonnet  ')).toBe('Sonnet')
+        expect(getClaudeModelLabel('  glm-5.3[1M]  ')).toBe('GLM-5.3')
     })
 
     test('returns null for unknown model', () => {
