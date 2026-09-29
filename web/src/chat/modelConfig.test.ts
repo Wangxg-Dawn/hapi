@@ -6,6 +6,10 @@ describe('getContextBudgetTokens', () => {
         expect(getContextBudgetTokens('sonnet[1m]', 'claude')).toBe(990_000)
     })
 
+    it('uses the large budget for relay model ids carrying an uppercase [1M] suffix', () => {
+        expect(getContextBudgetTokens('glm-5.3[1M]', 'claude')).toBe(990_000)
+    })
+
     it('uses the default Claude budget for full Claude model names', () => {
         expect(getContextBudgetTokens('claude-sonnet-4-6', 'claude')).toBe(190_000)
     })

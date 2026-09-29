@@ -9,10 +9,17 @@ describe('getSessionModelLabel', () => {
         })
     })
 
-    it('renders friendly labels for known Claude aliases', () => {
+    it('renders friendly labels for known Claude models', () => {
+        expect(getSessionModelLabel({ model: 'glm-5.3[1M]' })).toEqual({
+            key: 'session.item.model',
+            value: 'GLM-5.3'
+        })
+    })
+
+    it('falls back to the raw string for retired tier aliases', () => {
         expect(getSessionModelLabel({ model: 'opus' })).toEqual({
             key: 'session.item.model',
-            value: 'Opus'
+            value: 'opus'
         })
     })
 
